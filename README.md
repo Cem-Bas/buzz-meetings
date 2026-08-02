@@ -63,7 +63,22 @@ as bare hex, and the fetch fails soft — a roster that can't be loaded just omi
 section instead of failing the turn.
 
 **Where:** `crates/buzz-acp/src/pool.rs` (`fetch_channel_roster`),
-`crates/buzz-acp/src/queue.rs` (`format_channel_peers`).
+`crates/buzz-acp/src/queue.rs` (`format_channel_peers`). One test,
+`test_format_channel_peers_splits_agents_and_drops_self_and_unlabeled`, covers self
+exclusion, the agent/human split, and dropping unlabeled members. 665 tests pass.
+
+**Why this and not "just turn off the mention gate":** the gate is already configurable
+(`--subscribe all`, `--no-mention-filter`, or per-channel `require_mention = false`), so
+turning it off needed no patch at all. It also wouldn't have fixed anything on its own —
+an agent that hears every message still can't *reach* a peer whose pubkey it has never
+seen. Discovery was the missing half, and it was the half that needed code.
+
+**A consequence worth stating plainly:** publishing agent pubkeys makes them addressable
+by anyone in the channel. Combined with ambient mode, that is exactly the surface the
+Adversary persona probed — one broadcast waking every agent at once. The roster is scoped
+to channel members, who could already enumerate membership, so this exposes nothing new;
+but if you run ambient mode with untrusted channel members, that combination is the thing
+to think about.
 
 ### 2. Agents write like teammates, not like report generators
 
@@ -98,25 +113,59 @@ here transfers:
 | **Rotating speaking order** | A different persona opens each round | With a fixed order the first speaker frames the debate and everyone reacts to that frame |
 | **`--context` grounding** | Real files injected as ground truth the personas must prefer over their assumptions | Ungrounded personas invent specifics and state them as fact |
 
-### These aren't decorative — each one changed the output
+### Why each mechanism exists
 
-Same model, same topic, three runs:
+Every rule above earned its place by changing the output. Same model
+(`gemma4:12b`), same question — *"should Buzz drop the @mention gate?"* — four runs.
 
-- **Without cross-talk**, the meeting concluded *"keep the gate."* Four independent
-  position statements; Security raised a PII objection and the chair closed the round
-  before anyone answered it.
-- **With cross-talk and no round-1 close**, it concluded *"drop the gate, use NIP-29
-  membership as the trust boundary"* — because the objection got answered instead of
-  merely logged.
-- **With `--context` grounding**, UX stopped claiming the change would "flood users with
-  notifications" (it wouldn't — the gate controls agent wake-up, not human notifications)
-  and correctly reframed it as opt-in versus opt-out. Rust cited `filter.rs` and pointed
-  out the setting was already per-channel configurable, making the whole thing a question
-  about the *default value*.
+**Run 1 — no cross-talk. Verdict: keep the gate.**
+Four independent position statements, none addressed to anyone. Security raised a PII
+objection and the chair closed the round before a single person answered it. This is a
+panel of position papers, not a meeting.
 
-Three different conclusions from three different choreographies. The structure of the
-meeting determines its outcome at least as much as the model does — which is the finding
-this harness exists to make visible.
+> *Added: personas must respond to a named prior speaker; the chair may not close round 1.*
+
+**Run 2 — with cross-talk. Verdict: drop the gate, use NIP-29 membership as the trust
+boundary.**
+The same objection got *answered* rather than logged, and the answer changed the outcome.
+Note what happened: forbidding a round-1 close reversed the decision. Nothing else moved.
+
+**Run 3 — with `--context` grounding. Verdict: keep the gate as default.**
+Ungrounded, UX had argued the change would "flood users with notifications" — invented;
+the gate controls agent wake-up and has nothing to do with human notifications. Grounded,
+UX correctly reframed it as opt-in versus opt-out, and Backend cited `filter.rs` to point
+out the setting was *already* per-channel configurable — making the whole debate a
+question about a default value rather than a mechanism.
+
+> *Grounding doesn't just improve accuracy. It changes what the meeting is about.*
+
+**Run 4 — unconventional panel** (Architect, Deleter, Adversary, Maintainer, Newcomer).
+The clearest argument of the four, and none of it came from the conventional roles:
+
+- **Adversary** found an attack nobody else did: *"broadcast a single request that triggers
+  every agent in a channel simultaneously... scrape data from an entire group of bots with
+  one packet instead of needing their specific pubkeys."*
+- **Maintainer** turned it into an obligation: if bulk-harvesting is permitted, that must be
+  a recorded decision rather than an oversight.
+- **Newcomer** asked the naive question that actually resolved it — *"does 'one prompt in
+  flight' mean only one agent can respond?"*
+- **Deleter** answered it from the code and closed the loop.
+
+### The most important finding is a warning
+
+Run 4's conclusion rests on a claim that appears to be **wrong**. The Deleter asserted that
+`queue.rs` guarantees only one agent processes a message per turn; in fact that limit is
+per channel *within a single harness process*, and separate agents run separate harnesses
+with independent queues. The Adversary's objection was dismissed on a misreading — of a
+file that was in the grounding context.
+
+So: **`--context` makes personas cite real files, which makes wrong inferences more
+convincing, not less.** Treat the output as a well-argued draft to review, never as a
+decision to adopt. The transcript's confidence is not evidence.
+
+That caveat is the honest version of the headline result — that meeting structure
+determines outcome at least as much as the model does. Four choreographies, four
+conclusions, one model.
 
 ## Running it
 
