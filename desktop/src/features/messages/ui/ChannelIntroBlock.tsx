@@ -2,6 +2,7 @@ import * as React from "react";
 import { Hash, Users } from "lucide-react";
 
 import { CreateMeetingDialog } from "@/features/meetings/CreateMeetingDialog";
+import { isMeetingChannel } from "@/features/meetings/useCreateMeeting";
 import { useCreateMeetingFlow } from "@/features/meetings/useCreateMeetingFlow";
 import { cn } from "@/shared/lib/cn";
 
@@ -42,19 +43,23 @@ export function ChannelIntroBlock({
   // state down through ChannelScreen and ChannelPane.
   const actions: ChannelIntroAction[] = React.useMemo(() => {
     const base = intro.actions ?? [];
-    if (!intro.actions?.length) {
+    // No "Create a meeting" inside a meeting — you are already in one.
+    if (!intro.actions?.length || isMeetingChannel(intro.channelName)) {
       return base;
     }
     return [
       ...base,
       {
+        // Sized to match its neighbours: cards without a description render
+        // short, which is what made this one look broken next to the others.
+        description: "Pick a topic and who attends.",
         icon: <Users aria-hidden className="h-6 w-6" />,
         label: "Create a meeting",
         onClick: meeting.openDialog,
         testId: "channel-intro-action-create-meeting",
       },
     ];
-  }, [intro.actions, meeting.openDialog]);
+  }, [intro.actions, intro.channelName, meeting.openDialog]);
 
   return (
     <div

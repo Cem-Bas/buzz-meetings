@@ -21,6 +21,14 @@ export type CreateMeetingResult = {
   failures: { name: string; reason: string }[];
 };
 
+/** Prefix for channels created as meetings. Also how a meeting channel is recognised. */
+export const MEETING_CHANNEL_PREFIX = "meeting-";
+
+/** True when this channel is itself a meeting — used to hide "Create a meeting" inside one. */
+export function isMeetingChannel(channelName: string | undefined): boolean {
+  return Boolean(channelName?.startsWith(MEETING_CHANNEL_PREFIX));
+}
+
 /** Channel names are user-visible; keep them short and readable. */
 const MAX_CHANNEL_NAME = 60;
 
@@ -36,7 +44,9 @@ export function meetingChannelName(topic: string): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, MAX_CHANNEL_NAME)
     .replace(/-+$/g, "");
-  return slug ? `meeting-${slug}`.slice(0, MAX_CHANNEL_NAME) : "meeting";
+  return slug
+    ? `${MEETING_CHANNEL_PREFIX}${slug}`.slice(0, MAX_CHANNEL_NAME)
+    : "meeting";
 }
 
 /**
