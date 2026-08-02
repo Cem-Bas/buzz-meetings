@@ -2766,7 +2766,11 @@ async fn fetch_channel_roster(channel_id: Uuid, rest: &RestClient) -> Option<Vec
             [channel_id.to_string()],
         );
 
-    let json = match timeout(CONTEXT_FETCH_TIMEOUT, rest.query(std::slice::from_ref(&filter))).await
+    let json = match timeout(
+        CONTEXT_FETCH_TIMEOUT,
+        rest.query(std::slice::from_ref(&filter)),
+    )
+    .await
     {
         Ok(Ok(json)) => json,
         Ok(Err(e)) => {

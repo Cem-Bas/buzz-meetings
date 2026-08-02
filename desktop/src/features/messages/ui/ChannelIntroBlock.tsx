@@ -57,9 +57,12 @@ export function ChannelIntroBlock({
     return [
       ...base,
       {
-        // Sized to match its neighbours: cards without a description render
-        // short, which is what made this one look broken next to the others.
-        description: "Pick a topic and who attends.",
+        // Match the siblings' height: a card with a description renders tall
+        // (h-56) and one without renders short (h-28), so carrying a
+        // description into a row that has none leaves this card oversized.
+        description: base.some((action) => action.description)
+          ? "Pick a topic and who attends."
+          : undefined,
         icon: <Users aria-hidden className="h-6 w-6" />,
         label: "Create a meeting",
         onClick: meeting.openDialog,

@@ -1570,9 +1570,7 @@ pub fn format_prompt(batch: &FlushBatch, args: &FormatPromptArgs<'_>) -> Vec<Str
 
     // 2b. Channel peers — who else is here and how to reach them.
     if let Some(roster) = args.roster {
-        if let Some(peers) =
-            format_channel_peers(roster, args.self_pubkey, args.profile_lookup)
-        {
+        if let Some(peers) = format_channel_peers(roster, args.self_pubkey, args.profile_lookup) {
             sections.push(peers);
         }
     }
@@ -2401,7 +2399,10 @@ mod tests {
         assert!(s.contains(&peer_agent), "pubkey needed for --mention: {s}");
         assert!(s.contains("Will Pfleger"), "human must be listed: {s}");
         assert!(!s.contains("Me"), "self must be excluded: {s}");
-        assert!(!s.contains(&unlabeled), "unlabeled peer must be dropped: {s}");
+        assert!(
+            !s.contains(&unlabeled),
+            "unlabeled peer must be dropped: {s}"
+        );
 
         // Agents come before people — delegation targets are the point.
         let agents_at = s.find("Agents you can delegate to").unwrap();
