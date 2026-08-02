@@ -102,25 +102,142 @@ fn managed_node_failed_step(stderr: String) -> InstallStepResult {
     }
 }
 
-fn managed_node_runtime_ready() -> bool {
+pub(super) fn managed_node_runtime_ready() -> bool {
     let Some(node) = crate::managed_agents::buzz_managed_node_bin_path() else {
         return false;
     };
     if !node.is_file() {
         return false;
     }
+
+    // Version probe bounded by a 3-second deadline.  Stdout goes to a temp
+    // file (never blocked by an inherited handle); the child runs in its own
+    // process group so SIGKILL on timeout/error reaches every descendant.
+    const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
+
+    let tmp = match tempfile::NamedTempFile::new() {
+        Ok(f) => f,
+        Err(_) => return false,
+    };
+    let out_file = match tmp.reopen() {
+        Ok(f) => f,
+        Err(_) => return false,
+    };
+
     let mut cmd = std::process::Command::new(&node);
     cmd.arg("--version")
         .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::from(out_file))
         .stderr(std::process::Stdio::null());
     crate::util::configure_no_window(&mut cmd);
-    let output = cmd.output();
-    output
-        .ok()
-        .filter(|output| output.status.success())
-        .map(|output| String::from_utf8_lossy(&output.stdout).trim() == MANAGED_NODE_VERSION)
-        .unwrap_or(false)
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    let Ok(mut child) = cmd.spawn() else {
+        return false;
+    };
+
+    let deadline = std::time::Instant::now() + PROBE_TIMEOUT;
+    let exit_status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    kill_probe_group(child.id());
+                    let _ = child.wait();
+                    return false;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(_) => {
+                kill_probe_group(child.id());
+                let _ = child.wait();
+                return false;
+            }
+        }
+    };
+
+    // Group-kill unconditionally: SIGKILL to a dead group is ESRCH (no-op).
+    kill_probe_group(child.id());
+
+    if !exit_status.success() {
+        return false;
+    }
+
+    let mut output = String::new();
+    if std::io::Read::read_to_string(&mut tmp.as_file(), &mut output).is_err() {
+        return false;
+    }
+    output.trim() == MANAGED_NODE_VERSION
+}
+
+/// Kill the probe's process group/tree unconditionally (no TERM grace — this
+/// is a probe, not an agent session).  ESRCH on a dead group is fine.
+fn kill_probe_group(pid: u32) {
+    #[cfg(unix)]
+    unsafe {
+        libc::kill(-(pid as i32), libc::SIGKILL);
+    }
+    #[cfg(windows)]
+    {
+        let _ = crate::managed_agents::terminate_process(pid);
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = pid;
+    }
+}
+
+/// Returns `true` when the managed Node runtime is absent or no longer executes —
+/// meaning any existing npm adapter shims are broken and must be reinstalled.
+///
+/// This fires when the pinned Node version changes (e.g. v24.11.0 → v24.18.0):
+/// the old dir stays on disk, shims appear installed, but they fail at run time
+/// because the Node binary they reference is gone.  Treating the adapter as
+/// missing forces `ensure_managed_node_runtime_blocking` to re-download Node and
+/// npm to reinstall the shims.
+pub(super) fn managed_node_orphaned() -> bool {
+    managed_node_runtime_supported() && !managed_node_runtime_ready()
+}
+
+/// Returns `true` when an adapter at `resolved` should be invalidated.
+///
+/// Only a Buzz-managed shim (path under `managed_prefix`) with an orphaned
+/// runtime is invalidated; external adapters are always preserved.
+pub(super) fn should_invalidate_adapter(
+    resolved: &std::path::Path,
+    managed_prefix: &std::path::Path,
+    orphaned: bool,
+) -> bool {
+    orphaned && resolved.starts_with(managed_prefix)
+}
+
+/// Resolve the adapter binary path, accounting for the Node-orphan case.
+/// Resolves first; invalidates only managed-prefix shims when Node is orphaned.
+pub(super) fn resolve_adapter_path(
+    commands: &[&str],
+    adapter_install_commands: &[&str],
+) -> Option<std::path::PathBuf> {
+    let resolved = commands
+        .iter()
+        .find_map(|cmd| crate::managed_agents::resolve_command(cmd));
+
+    let needs_managed_npm = adapter_install_commands
+        .iter()
+        .any(|cmd| is_npm_global_install(cmd));
+    if needs_managed_npm {
+        if let (Some(ref path), Some(ref managed_bin)) =
+            (&resolved, crate::managed_agents::buzz_managed_npm_bin_dir())
+        {
+            if should_invalidate_adapter(path, managed_bin, managed_node_orphaned()) {
+                return None;
+            }
+        }
+    }
+
+    resolved
 }
 
 fn managed_node_install_lock() -> &'static Mutex<()> {
@@ -744,5 +861,138 @@ mod tests {
             let err = verify_node_tree(tmp.path()).unwrap_err();
             assert!(err.contains("npm"), "err: {err}");
         }
+    }
+
+    // ── should_invalidate_adapter / orphan policy pure unit tests ───────────
+
+    #[test]
+    fn test_should_invalidate_adapter_invalidates_managed_shim_when_orphaned() {
+        let prefix = std::path::Path::new("/managed/npm/bin");
+        let shim = prefix.join("codex-acp");
+        assert!(
+            should_invalidate_adapter(&shim, prefix, true),
+            "managed shim + orphaned runtime must be invalidated"
+        );
+    }
+
+    #[test]
+    fn test_should_invalidate_adapter_keeps_external_adapter_when_orphaned() {
+        let prefix = std::path::Path::new("/managed/npm/bin");
+        let external = std::path::Path::new("/usr/local/bin/codex-acp");
+        assert!(
+            !should_invalidate_adapter(external, prefix, true),
+            "external adapter must not be invalidated even when Node is orphaned"
+        );
+    }
+
+    #[test]
+    fn test_should_invalidate_adapter_keeps_managed_shim_when_node_healthy() {
+        let prefix = std::path::Path::new("/managed/npm/bin");
+        let shim = prefix.join("codex-acp");
+        assert!(
+            !should_invalidate_adapter(&shim, prefix, false),
+            "managed shim must not be invalidated when Node is healthy"
+        );
+    }
+
+    #[test]
+    fn test_resolve_adapter_path_returns_none_when_binary_absent() {
+        let commands: &[&str] = &["nonexistent-buzz-test-binary-xyz"];
+        let adapter_install_commands: &[&str] = &["curl -fsSL https://example.com | bash"];
+        assert!(
+            resolve_adapter_path(commands, adapter_install_commands).is_none(),
+            "must return None when the command is not on PATH"
+        );
+    }
+
+    // ── managed_node_runtime_ready process-lifecycle regressions (Unix) ─────
+
+    /// Script spawns a sleeping descendant inheriting stdout then exits: group
+    /// must die promptly and the descendant must not survive.
+    #[cfg(unix)]
+    #[test]
+    fn test_probe_returns_promptly_and_kills_descendant_holding_stdout() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::os::unix::process::CommandExt;
+        let tmp_script = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            tmp_script.path(),
+            b"#!/bin/sh\n/bin/sleep 60 &\necho v0.0.0\nexit 0\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(tmp_script.path(), std::fs::Permissions::from_mode(0o755))
+            .unwrap();
+
+        let mut cmd = std::process::Command::new(tmp_script.path());
+        cmd.stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .process_group(0);
+        let mut child = cmd.spawn().expect("spawn probe script");
+        let child_pid = child.id();
+
+        // Let the script run long enough to background the sleeper.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let _ = child.wait();
+
+        kill_probe_group(child_pid);
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let group_alive = unsafe { libc::kill(-(child_pid as i32), 0) } == 0;
+        assert!(
+            !group_alive,
+            "process group must not survive kill_probe_group"
+        );
+    }
+
+    /// Hung binary (sleeps > deadline): kill_probe_group returns promptly and
+    /// the process group does not survive.
+    #[cfg(unix)]
+    #[test]
+    fn test_probe_times_out_on_hung_binary() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::os::unix::process::CommandExt;
+        let tmp_script = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp_script.path(), b"#!/bin/sh\n/bin/sleep 30\n").unwrap();
+        std::fs::set_permissions(tmp_script.path(), std::fs::Permissions::from_mode(0o755))
+            .unwrap();
+
+        let mut cmd = std::process::Command::new(tmp_script.path());
+        cmd.stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .process_group(0);
+        let mut child = cmd.spawn().expect("spawn hung script");
+        let pid = child.id();
+
+        let t = std::time::Instant::now();
+        kill_probe_group(pid);
+        let _ = child.wait();
+        assert!(
+            t.elapsed() < std::time::Duration::from_secs(2),
+            "kill_probe_group must not stall on a hung process"
+        );
+        let group_alive = unsafe { libc::kill(-(pid as i32), 0) } == 0;
+        assert!(!group_alive, "hung process group must be gone after kill");
+    }
+
+    /// Returns false when the node binary path does not exist (fast path,
+    /// no spawn).  On a developer machine with managed Node installed, skips.
+    #[test]
+    fn test_managed_node_runtime_ready_returns_false_when_binary_absent() {
+        let Some(node) = crate::managed_agents::buzz_managed_node_bin_path() else {
+            assert!(
+                !managed_node_runtime_ready(),
+                "managed_node_runtime_ready must return false when no path resolves"
+            );
+            return;
+        };
+        if node.is_file() {
+            return;
+        }
+        assert!(
+            !managed_node_runtime_ready(),
+            "managed_node_runtime_ready must return false when the binary file does not exist"
+        );
     }
 }
