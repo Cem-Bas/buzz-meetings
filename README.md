@@ -1,15 +1,16 @@
 <h1 align="center">Meetings 🐝</h1>
 
 <p align="center">
-  <strong>A fork of <a href="https://github.com/block/buzz">Buzz</a> where agents can find each other, talk like people, and hold a real meeting.</strong>
+  <strong>Run a real design meeting with a room full of AI agents. An architect chairs, specialists argue, and they write up the decision together.</strong><br>
+  <sub>A fork of <a href="https://github.com/block/buzz">Buzz</a>.</sub>
 </p>
 
 <p align="center">
-  <a href="#functions">Functions</a> ·
+  <a href="#design-meetings">Meetings</a> ·
   <a href="#quick-start">Quick start</a> ·
-  <a href="#1-agent-peer-discovery">Peer discovery</a> ·
-  <a href="#3-design-meetings">Meetings</a> ·
+  <a href="#the-personas">Personas</a> ·
   <a href="#what-we-learned">Findings</a> ·
+  <a href="#supporting-changes">Supporting changes</a> ·
   <a href="#license-and-attribution">License</a>
 </p>
 
@@ -17,20 +18,17 @@
 
 ## Functions
 
-Everything this fork adds on top of upstream Buzz. Two are patches to `buzz-acp`;
-one is a standalone tool.
-
-| # | Function | What it does | Where |
-|---|---|---|---|
-| 1 | [**Agent peer discovery**](#1-agent-peer-discovery) | Injects a `[Channel Peers]` roster into every agent prompt so agents can see and address each other | `crates/buzz-acp/src/{pool,queue}.rs` |
-| 2 | [**Concise chat style**](#2-concise-chat-style) | Makes agents write like teammates in a chat room instead of generating reports | `crates/buzz-acp/src/base_prompt.md` |
-| 3 | [**Design meetings**](#3-design-meetings) | Runs a chaired, multi-persona design meeting against a local model and produces a joint document | `meetings/meeting.py` |
-| 3a | [**Persona library**](#persona-library) | 17 editable personas, including roles built to catch what a standard panel misses | `meetings/personas.md` |
-| 3b | [**Grounding**](#grounding) | Feeds real files to the personas as ground truth so they stop inventing specifics | `--context` |
+| Function | What it does | Where |
+|---|---|---|
+| [**Design meetings**](#design-meetings) | Runs a chaired meeting across several agent personas and produces a joint decision document | `meetings/meeting.py` |
+| [**Persona library**](#the-personas) | 17 editable personas, including roles built to catch what a standard panel misses | `meetings/personas.md` |
+| [**Grounding**](#grounding) | Feeds real files to the personas as ground truth so they stop inventing specifics | `--context` |
+| [**Create a meeting** (in-app)](#in-the-app) | Card in the Buzz UI: pick a topic and attendees, get a channel with an agent per persona | `desktop/src/features/meetings/` |
+| [*Agents hearing each other*](#agents-hearing-each-other) | *Supporting:* roster in every agent prompt, so agents in a room can address each other | `crates/buzz-acp/` |
+| [*Agents writing like people*](#agents-writing-like-people) | *Supporting:* chat register instead of report register | `base_prompt.md` |
 
 Upstream's own functions — relay, channels, threads, DMs, canvases, media, search,
-workflows, git events, desktop and mobile apps — are unchanged. See
-[upstream's README](https://github.com/block/buzz#readme) for those.
+workflows, git events, desktop and mobile apps — are unchanged.
 
 ## Quick start
 
@@ -54,22 +52,123 @@ python3 meeting.py "Should we replace the mention gate with ambient mode?"
 
 ## Why this fork exists
 
-[Buzz](https://github.com/block/buzz) is a self-hostable workspace where humans and AI
-agents share the same rooms, built on a Nostr relay. Two things about living in it were
-frustrating enough to fix: **you had to tag every agent** to get anything out of it, and
-**agents didn't talk to each other.**
+I wanted several AI agents to think through a design question together — properly,
+the way a good meeting works: someone chairs, specialists push back, and the room
+converges on a decision it can write down.
 
-Investigating turned up something more interesting than either complaint. **The second
-problem wasn't what it looked like.** Nothing in Buzz blocks agent-to-agent messaging —
-`ignore_self` is keyed on an agent's own pubkey, so agent A's message already reaches
-agent B, and the stock prompt already tells agents to delegate to peers. The real gap was
-that **no agent could learn another agent existed.** It can't mention a peer it doesn't
-know about, and with mention-gating on, an unmentioned peer never wakes. A discovery gap
-wearing a protocol gap's clothes.
+[Buzz](https://github.com/block/buzz) was the right substrate, because agents there are
+channel members with their own keys rather than bots bolted onto a chat app. But a room
+full of agents was not yet a meeting. They could not address each other, and everything
+they said read like a report. Fixing those two things is what
+[Supporting changes](#supporting-changes) covers. The meeting is the point.
+
+# Design meetings
+
+`meetings/meeting.py` — a dependency-free harness that runs a chaired design meeting across
+several personas against a local model, ending with the personas jointly writing a
+document.
+
+An **Architect** chairs. Specialists pitch in from their own expertise. At the end each
+writes their section and the chair merges them into one document with a decision summary.
+
+```bash
+python3 meeting.py "your question"                        # default panel of 5
+python3 meeting.py --list                                 # show all 17 personas
+python3 meeting.py --with Architect,QA,SRE,Migrator "..."  # pick attendees
+python3 meeting.py --with Architect,Adversary --chair Adversary "..."
+python3 meeting.py --context facts.md "..."               # ground it in real files
+python3 meeting.py --model llama3.1:8b --rounds 5 "..."
+```
+
+Outputs `meeting-output/DECISION.md` (the joint document) and
+`meeting-output/transcript.md` (who said what). The transcript is written after every
+message, so a meeting is never lost to a slow model call.
+
+## In the app
+
+The harness runs meetings in a terminal. Inside Buzz, the Welcome channel has a
+**Create a meeting** card: pick a topic and tick the attendees, and it creates a private
+channel, spawns one agent per persona with that persona's prose as its system prompt,
+seats them all, and drops you in.
+
+Meeting agents are created with `respondTo: "anyone"` rather than the `owner-only`
+default — that is the whole point, since owner-only agents only wake when *you* mention
+them and would never hear each other. That also means they respond to anyone in the
+channel, which is why meeting channels are created private.
+
+**Source:** `desktop/src/features/meetings/`. Personas are read from the same
+`meetings/personas.md` the harness uses, so the two can never disagree.
+
+## How a meeting runs
+
+It deliberately mirrors the semantics we'd ship into `buzz-acp`, so choreography that works
+here transfers:
+
+| Mechanism | What it does | Why it's there |
+|---|---|---|
+| **Ambient, no mention gate** | Every persona sees every message and decides for itself whether to speak | This is `require_mention = false` — the no-gates mode, tested honestly |
+| **`PASS` is a real answer** | A persona with nothing to add says so and is skipped | The termination pressure. Same rule as the stock prompt's "silence is usually correct" |
+| **The chair closes** | Meeting ends when the chair judges every objection answered | Ambient mode means A wakes B wakes A. A chaired close is what stops the loop |
+| **No close on round 1** | The chair must surface the sharpest objection and have it challenged first | Without it you get parallel position papers, not a conversation |
+| **Rotating speaking order** | A different persona opens each round | With a fixed order the first speaker frames the debate and everyone reacts to that frame |
+| **Degrades, never dies** | A failed model call counts as silence; a failed chair turn continues; a failed summary says so | A slow generation must not destroy a meeting that already happened |
+
+## The personas
+
+Personas are **data, not code** — [`meetings/personas.md`](meetings/personas.md), one `##`
+heading each, the prose under it becomes that persona's system prompt. Add your own by
+adding a heading. Attendance is chosen per meeting, so an uninvited persona costs nothing.
+
+Default panel is five: **Architect, Backend, UX, Security, Deleter** — small on purpose,
+since every attendee is another voice per round.
+
+**The usual suspects:** Architect (chairs) · Backend · Protocol · Frontend · UX · Security ·
+QA · SRE · Product
+
+**The ones worth having.** A room of specialists agrees too easily — each is only
+responsible for their own slice, so nobody is responsible for the whole. These exist to
+break that:
+
+| Persona | What they're for |
+|---|---|
+| **Deleter** | Argues for the smallest thing that works, and first for not building it at all. Asks whether existing config already covers this — which, twice in this fork's own history, it did |
+| **Adversary** | Security defends; the Adversary attacks. Names the specific abuse: what they'd send, what they'd automate, what it costs them to try |
+| **Maintainer** | Inherits the code in two years after everyone who designed it has left. Watches for what will rot silently and what implicit knowledge is about to go undocumented |
+| **Newcomer** | Joined last week. Asks the question everyone else is too senior to ask. Their confusion is data — a design that can't be explained to them isn't clear enough to build |
+| **Historian** | Remembers what was already tried and reversed. Strongest with `--context`, which gives them real evidence instead of invented history |
+| **Migrator** | Owns the path from what exists to what's proposed. Asks what runs while both versions are live, and what happens to whoever doesn't upgrade |
+| **Support** | Answers the tickets this generates. Knows the difference between a bug and a design that reliably produces bugs |
+| **Absent Stakeholder** | Represents whoever the decision affects but isn't in the room — another team, an integrator, someone running this self-hosted |
+
+Keep new personas to 2–4 sentences. These run against small local models; a description
+longer than working memory is one the model quietly stops following. Say what they uniquely
+watch for and when they should stay quiet.
+
+## Grounding
+
+```bash
+python3 meeting.py --context facts.md --context ../ARCHITECTURE.md "your question"
+```
+
+Named files are injected as ground truth the personas must prefer over their own
+assumptions. Without it they speculate about code they cannot see and state the guesses as
+fact. Whole files are injected with no chunking, so mind the context window.
+
+Read [what grounding does and doesn't fix](#the-most-important-finding-is-a-warning) before
+trusting the output.
 
 ---
 
-# 1. Agent peer discovery
+
+---
+
+# Supporting changes
+
+Two small patches to `buzz-acp` that exist so a meeting works at all. They are
+plumbing, not the point: without them agents in a room cannot address each other,
+and everything they say reads like a status report.
+
+## Agents hearing each other
 
 Every agent prompt now carries a `[Channel Peers]` section listing the channel's other
 members — agents first and flagged as delegation targets, each with the pubkey needed to
@@ -112,9 +211,7 @@ ambient mode, that is exactly the surface the [Adversary persona probed](#what-w
 could already enumerate membership, so this exposes nothing new. But if you run ambient
 mode with untrusted channel members, that combination is the thing to think about.
 
----
-
-# 2. Concise chat style
+## Agents writing like people
 
 A `### Chat Style` block in the agent base prompt: 1–2 sentences by default, lead with the
 answer, no preamble, no status narration, no closing summary of what was just said. Bullets
@@ -122,88 +219,6 @@ only for genuinely parallel items.
 
 Long form stays available when someone actually asks for it — the rule targets padding, not
 substance. Prompt-only, so there's no automated test; verify it by reading agent output.
-
----
-
-# 3. Design meetings
-
-`meetings/meeting.py` — a dependency-free harness that runs a chaired design meeting across
-several personas against a local model, ending with the personas jointly writing a
-document.
-
-An **Architect** chairs. Specialists pitch in from their own expertise. At the end each
-writes their section and the chair merges them into one document with a decision summary.
-
-```bash
-python3 meeting.py "your question"                        # default panel of 5
-python3 meeting.py --list                                 # show all 17 personas
-python3 meeting.py --with Architect,QA,SRE,Migrator "..."  # pick attendees
-python3 meeting.py --with Architect,Adversary --chair Adversary "..."
-python3 meeting.py --context facts.md "..."               # ground it in real files
-python3 meeting.py --model llama3.1:8b --rounds 5 "..."
-```
-
-Outputs `meeting-output/DECISION.md` (the joint document) and
-`meeting-output/transcript.md` (who said what). The transcript is written after every
-message, so a meeting is never lost to a slow model call.
-
-### How the meeting runs
-
-It deliberately mirrors the semantics we'd ship into `buzz-acp`, so choreography that works
-here transfers:
-
-| Mechanism | What it does | Why it's there |
-|---|---|---|
-| **Ambient, no mention gate** | Every persona sees every message and decides for itself whether to speak | This is `require_mention = false` — the no-gates mode, tested honestly |
-| **`PASS` is a real answer** | A persona with nothing to add says so and is skipped | The termination pressure. Same rule as the stock prompt's "silence is usually correct" |
-| **The chair closes** | Meeting ends when the chair judges every objection answered | Ambient mode means A wakes B wakes A. A chaired close is what stops the loop |
-| **No close on round 1** | The chair must surface the sharpest objection and have it challenged first | Without it you get parallel position papers, not a conversation |
-| **Rotating speaking order** | A different persona opens each round | With a fixed order the first speaker frames the debate and everyone reacts to that frame |
-| **Degrades, never dies** | A failed model call counts as silence; a failed chair turn continues; a failed summary says so | A slow generation must not destroy a meeting that already happened |
-
-### Persona library
-
-Personas are **data, not code** — [`meetings/personas.md`](meetings/personas.md), one `##`
-heading each, the prose under it becomes that persona's system prompt. Add your own by
-adding a heading. Attendance is chosen per meeting, so an uninvited persona costs nothing.
-
-Default panel is five: **Architect, Backend, UX, Security, Deleter** — small on purpose,
-since every attendee is another voice per round.
-
-**The usual suspects:** Architect (chairs) · Backend · Protocol · Frontend · UX · Security ·
-QA · SRE · Product
-
-**The ones worth having.** A room of specialists agrees too easily — each is only
-responsible for their own slice, so nobody is responsible for the whole. These exist to
-break that:
-
-| Persona | What they're for |
-|---|---|
-| **Deleter** | Argues for the smallest thing that works, and first for not building it at all. Asks whether existing config already covers this — which, twice in this fork's own history, it did |
-| **Adversary** | Security defends; the Adversary attacks. Names the specific abuse: what they'd send, what they'd automate, what it costs them to try |
-| **Maintainer** | Inherits the code in two years after everyone who designed it has left. Watches for what will rot silently and what implicit knowledge is about to go undocumented |
-| **Newcomer** | Joined last week. Asks the question everyone else is too senior to ask. Their confusion is data — a design that can't be explained to them isn't clear enough to build |
-| **Historian** | Remembers what was already tried and reversed. Strongest with `--context`, which gives them real evidence instead of invented history |
-| **Migrator** | Owns the path from what exists to what's proposed. Asks what runs while both versions are live, and what happens to whoever doesn't upgrade |
-| **Support** | Answers the tickets this generates. Knows the difference between a bug and a design that reliably produces bugs |
-| **Absent Stakeholder** | Represents whoever the decision affects but isn't in the room — another team, an integrator, someone running this self-hosted |
-
-Keep new personas to 2–4 sentences. These run against small local models; a description
-longer than working memory is one the model quietly stops following. Say what they uniquely
-watch for and when they should stay quiet.
-
-### Grounding
-
-```bash
-python3 meeting.py --context facts.md --context ../ARCHITECTURE.md "your question"
-```
-
-Named files are injected as ground truth the personas must prefer over their own
-assumptions. Without it they speculate about code they cannot see and state the guesses as
-fact. Whole files are injected with no chunking, so mind the context window.
-
-Read [what grounding does and doesn't fix](#the-most-important-finding-is-a-warning) before
-trusting the output.
 
 ---
 

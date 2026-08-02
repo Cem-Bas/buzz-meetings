@@ -1,6 +1,8 @@
-import type * as React from "react";
-import { Hash } from "lucide-react";
+import * as React from "react";
+import { Hash, Users } from "lucide-react";
 
+import { CreateMeetingDialog } from "@/features/meetings/CreateMeetingDialog";
+import { useCreateMeetingFlow } from "@/features/meetings/useCreateMeetingFlow";
 import { cn } from "@/shared/lib/cn";
 
 export type ChannelIntroAction = {
@@ -33,6 +35,27 @@ export function ChannelIntroBlock({
   className?: string;
   intro: ChannelIntro;
 }) {
+  const meeting = useCreateMeetingFlow();
+
+  // The meeting card is appended here rather than in useChannelIntro so the
+  // dialog can live beside the button that opens it, instead of threading
+  // state down through ChannelScreen and ChannelPane.
+  const actions: ChannelIntroAction[] = React.useMemo(() => {
+    const base = intro.actions ?? [];
+    if (!intro.actions?.length) {
+      return base;
+    }
+    return [
+      ...base,
+      {
+        icon: <Users aria-hidden className="h-6 w-6" />,
+        label: "Create a meeting",
+        onClick: meeting.openDialog,
+        testId: "channel-intro-action-create-meeting",
+      },
+    ];
+  }, [intro.actions, meeting.openDialog]);
+
   return (
     <div
       className={cn(
@@ -62,9 +85,9 @@ export function ChannelIntroBlock({
           {intro.description}
         </p>
       ) : null}
-      {intro.actions?.length ? (
+      {actions.length ? (
         <div className="mt-4 flex max-w-full flex-nowrap gap-3 overflow-x-auto pb-1">
-          {intro.actions.map((action) => {
+          {actions.map((action) => {
             const hasDescription = Boolean(action.description);
 
             return (
@@ -120,6 +143,13 @@ export function ChannelIntroBlock({
           })}
         </div>
       ) : null}
+      <CreateMeetingDialog
+        error={meeting.error}
+        isCreating={meeting.isCreating}
+        onCreate={(input) => void meeting.create(input)}
+        onOpenChange={meeting.setOpen}
+        open={meeting.open}
+      />
     </div>
   );
 }

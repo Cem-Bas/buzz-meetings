@@ -72,3 +72,9 @@ identity.key
 
 # Helm dependency tarballs — regenerable from Chart.lock via `helm dependency build`
 deploy/charts/*/charts/*.tgz
+
+# Fork: social/marketing drafts stay local, never in the repo.
+linkedin*.md
+*-post.md
+posts/
+drafts/
