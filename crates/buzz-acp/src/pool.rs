@@ -1,3 +1,8 @@
+// NOTICE: This file has been modified from the original Buzz source
+// (https://github.com/block/buzz), which is Copyright 2026 Block, Inc. and
+// licensed under the Apache License, Version 2.0. Changes: added channel roster
+// fetching for the [Channel Peers] prompt section. See NOTICE and README-FORK.md.
+
 //! Agent pool — owns N AcpClient instances and dispatches prompt tasks.
 //!
 //! # Mental model
@@ -1830,8 +1835,16 @@ pub async fn run_prompt_task(
             None
         };
 
-        let profile_lookup =
-            fetch_prompt_profile_lookup(b, conversation_context.as_ref(), &ctx.rest_client).await;
+        let roster = fetch_channel_roster(b.channel_id, &ctx.rest_client).await;
+        let self_pubkey_hex = ctx.agent_keys.public_key().to_hex();
+
+        let profile_lookup = fetch_prompt_profile_lookup(
+            b,
+            conversation_context.as_ref(),
+            roster.as_deref(),
+            &ctx.rest_client,
+        )
+        .await;
 
         let known_names: Vec<&str> = profile_lookup
             .iter()
@@ -1861,6 +1874,8 @@ pub async fn run_prompt_task(
                 system_prompt: ctx.system_prompt.as_deref(),
                 team_instructions: ctx.team_instructions.as_deref(),
                 agent_canvas: agent_canvas.as_deref(),
+                roster: roster.as_deref(),
+                self_pubkey: Some(&self_pubkey_hex),
             },
         )
     } else {
@@ -2729,12 +2744,85 @@ fn parse_kind0_profile_lookup(json: serde_json::Value) -> Option<PromptProfileLo
     }
 }
 
+/// Fetch the hex pubkeys of every member of `channel_id`.
+///
+/// Queries kind:39002 (NIP-29 group members) for the channel's `d` tag and
+/// collects the `p` tags. Mirrors the membership half of
+/// `RelayConnection::discover_channels`, but pivots on the channel instead of
+/// on the agent.
+///
+/// Returns `None` on any failure — the roster is an enrichment, so a failed
+/// fetch degrades to a prompt without `[Channel Peers]` rather than a failed
+/// turn.
+async fn fetch_channel_roster(channel_id: Uuid, rest: &RestClient) -> Option<Vec<String>> {
+    use nostr::{Alphabet, SingleLetterTag};
+
+    let filter = nostr::Filter::new()
+        .kind(nostr::Kind::Custom(
+            buzz_core::kind::KIND_NIP29_GROUP_MEMBERS as u16,
+        ))
+        .custom_tags(
+            SingleLetterTag::lowercase(Alphabet::D),
+            [channel_id.to_string()],
+        );
+
+    let json = match timeout(CONTEXT_FETCH_TIMEOUT, rest.query(std::slice::from_ref(&filter))).await
+    {
+        Ok(Ok(json)) => json,
+        Ok(Err(e)) => {
+            tracing::debug!(channel = %channel_id, "channel roster fetch failed: {e}");
+            return None;
+        }
+        Err(_) => {
+            tracing::debug!(channel = %channel_id, "channel roster fetch timed out");
+            return None;
+        }
+    };
+
+    let mut pubkeys = HashSet::new();
+    for ev in json.as_array()? {
+        let Some(tags) = ev.get("tags").and_then(|t| t.as_array()) else {
+            continue;
+        };
+        for tag in tags {
+            let Some(arr) = tag.as_array() else { continue };
+            if arr.first().and_then(|v| v.as_str()) != Some("p") {
+                continue;
+            }
+            if let Some(normalized) = arr
+                .get(1)
+                .and_then(|v| v.as_str())
+                .and_then(normalize_prompt_pubkey)
+            {
+                pubkeys.insert(normalized);
+            }
+        }
+    }
+
+    if pubkeys.is_empty() {
+        return None;
+    }
+    let mut pubkeys: Vec<String> = pubkeys.into_iter().collect();
+    // Stable order so the rendered prompt is deterministic turn to turn —
+    // an unstable peer list would needlessly bust agent prompt caches.
+    pubkeys.sort();
+    Some(pubkeys)
+}
+
 async fn fetch_prompt_profile_lookup(
     batch: &FlushBatch,
     conversation_context: Option<&ConversationContext>,
+    roster: Option<&[String]>,
     rest: &RestClient,
 ) -> Option<PromptProfileLookup> {
-    let pubkeys = collect_prompt_pubkeys(batch, conversation_context);
+    let mut pubkeys = collect_prompt_pubkeys(batch, conversation_context);
+    // Roster members need profiles too — an unlabeled peer is dropped from
+    // [Channel Peers], which would defeat the point of fetching the roster.
+    if let Some(roster) = roster {
+        pubkeys.extend(roster.iter().cloned());
+        pubkeys.sort();
+        pubkeys.dedup();
+    }
     if pubkeys.is_empty() {
         return None;
     }

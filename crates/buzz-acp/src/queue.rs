@@ -1,3 +1,8 @@
+// NOTICE: This file has been modified from the original Buzz source
+// (https://github.com/block/buzz), which is Copyright 2026 Block, Inc. and
+// licensed under the Apache License, Version 2.0. Changes: added the
+// [Channel Peers] prompt section. See NOTICE and README-FORK.md.
+
 //! Event queue state machine for buzz-acp.
 //!
 //! Manages per-channel event queues with per-channel in-flight tracking.
@@ -1318,6 +1323,67 @@ fn format_context_hints(
     }
 }
 
+/// Format a `[Channel Peers]` section listing the channel's other members.
+///
+/// Agents are listed first and flagged, because delegating to a peer agent is
+/// the case that needs the pubkey: `@Name` alone resolves against channel
+/// members, but the harness only wakes a peer when its pubkey lands in a `p`
+/// tag, so the agent needs the hex to pass `--mention`.
+///
+/// Returns `None` when the roster is empty after removing self and members with
+/// no resolvable display name — a list of bare hex strings helps nobody.
+fn format_channel_peers(
+    roster: &[String],
+    self_pubkey: Option<&str>,
+    profile_lookup: Option<&PromptProfileLookup>,
+) -> Option<String> {
+    let self_key = self_pubkey.map(normalize_lookup_key);
+
+    let mut agents: Vec<String> = Vec::new();
+    let mut humans: Vec<String> = Vec::new();
+
+    for pubkey in roster {
+        let key = normalize_lookup_key(pubkey);
+        if Some(&key) == self_key.as_ref() {
+            continue;
+        }
+        // No label means no usable mention target — skip rather than emit hex.
+        let Some(label) = resolve_prompt_label(&key, profile_lookup) else {
+            continue;
+        };
+        let is_agent = profile_lookup
+            .and_then(|l| l.get(&key))
+            .map(|p| p.is_agent)
+            .unwrap_or(false);
+        let line = format!("- {label} ({key})");
+        if is_agent {
+            agents.push(line);
+        } else {
+            humans.push(line);
+        }
+    }
+
+    if agents.is_empty() && humans.is_empty() {
+        return None;
+    }
+
+    let mut s = String::from("[Channel Peers]");
+    if !agents.is_empty() {
+        s.push_str("\nAgents you can delegate to:\n");
+        s.push_str(&agents.join("\n"));
+    }
+    if !humans.is_empty() {
+        s.push_str("\nPeople in this channel:\n");
+        s.push_str(&humans.join("\n"));
+    }
+    s.push_str(
+        "\nTo reach one, send readable `@Name` text and pass their pubkey: \
+         `buzz messages send ... --content \"@Name ...\" --mention <hex>`. \
+         Only mention someone whose attention you actually need.",
+    );
+    Some(s)
+}
+
 /// Format a conversation context section (thread or DM).
 fn format_conversation_context(
     ctx: &ConversationContext,
@@ -1377,6 +1443,16 @@ pub struct FormatPromptArgs<'a> {
     /// For legacy agents it rides in the user message on every turn of the
     /// session, alongside `[Base]`/`[System]`/`[Agent Memory — core]`.
     pub agent_canvas: Option<&'a str>,
+    /// Hex pubkeys of the other members of this channel, for the `[Channel
+    /// Peers]` section. Populated from kind:39002 membership; `None` when the
+    /// roster fetch failed or was skipped.
+    ///
+    /// Without this an agent has no way to learn that a peer exists, so it can
+    /// never `@mention` one — and with `require_mention` on (the default), an
+    /// unmentioned peer never wakes. That dead end is what this section fixes.
+    pub roster: Option<&'a [String]>,
+    /// This agent's own hex pubkey, excluded from `[Channel Peers]`.
+    pub self_pubkey: Option<&'a str>,
 }
 
 /// Format the `[Base]` section for the base prompt.
@@ -1491,6 +1567,15 @@ pub fn format_prompt(batch: &FlushBatch, args: &FormatPromptArgs<'_>) -> Vec<Str
         args.conversation_context.is_some(),
         reply_anchor.as_deref(),
     ));
+
+    // 2b. Channel peers — who else is here and how to reach them.
+    if let Some(roster) = args.roster {
+        if let Some(peers) =
+            format_channel_peers(roster, args.self_pubkey, args.profile_lookup)
+        {
+            sections.push(peers);
+        }
+    }
 
     // 3. Conversation context (thread or DM).
     if let Some(ctx) = args.conversation_context {
@@ -2266,6 +2351,71 @@ mod tests {
         assert!(
             prompt.starts_with("[Agent Memory — core]\nbe helpful\n\n[Context]"),
             "expected core block first, then [Context]; got: {prompt}"
+        );
+    }
+
+    #[test]
+    fn test_format_channel_peers_splits_agents_and_drops_self_and_unlabeled() {
+        let me = "a".repeat(64);
+        let peer_agent = "b".repeat(64);
+        let human = "c".repeat(64);
+        let unlabeled = "d".repeat(64);
+
+        let mut lookup = PromptProfileLookup::new();
+        lookup.insert(
+            me.clone(),
+            PromptProfile {
+                display_name: Some("Me".into()),
+                nip05_handle: None,
+                is_agent: true,
+            },
+        );
+        lookup.insert(
+            peer_agent.clone(),
+            PromptProfile {
+                display_name: Some("Eva".into()),
+                nip05_handle: None,
+                is_agent: true,
+            },
+        );
+        lookup.insert(
+            human.clone(),
+            PromptProfile {
+                display_name: Some("Will Pfleger".into()),
+                nip05_handle: None,
+                is_agent: false,
+            },
+        );
+        // Present in the roster but with no profile at all — no usable label.
+        let roster = vec![
+            me.clone(),
+            peer_agent.clone(),
+            human.clone(),
+            unlabeled.clone(),
+        ];
+
+        let s = format_channel_peers(&roster, Some(&me), Some(&lookup))
+            .expect("roster with labeled peers should render");
+
+        assert!(s.contains("Eva"), "peer agent must be listed: {s}");
+        assert!(s.contains(&peer_agent), "pubkey needed for --mention: {s}");
+        assert!(s.contains("Will Pfleger"), "human must be listed: {s}");
+        assert!(!s.contains("Me"), "self must be excluded: {s}");
+        assert!(!s.contains(&unlabeled), "unlabeled peer must be dropped: {s}");
+
+        // Agents come before people — delegation targets are the point.
+        let agents_at = s.find("Agents you can delegate to").unwrap();
+        let people_at = s.find("People in this channel").unwrap();
+        assert!(agents_at < people_at, "agents section must come first: {s}");
+
+        // Nothing renderable → no section at all, not an empty header.
+        assert!(
+            format_channel_peers(&[me.clone()], Some(&me), Some(&lookup)).is_none(),
+            "roster containing only self must render nothing"
+        );
+        assert!(
+            format_channel_peers(&[unlabeled], Some(&me), Some(&lookup)).is_none(),
+            "roster with no resolvable labels must render nothing"
         );
     }
 

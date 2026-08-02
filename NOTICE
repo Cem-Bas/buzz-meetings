@@ -1,0 +1,66 @@
+Meetings
+Copyright 2026 Cem Bas
+
+This product is a modified derivative work of Buzz.
+
+  Buzz
+  Copyright 2026 Block, Inc.
+  https://github.com/block/buzz
+  Licensed under the Apache License, Version 2.0
+
+Buzz is used and redistributed here under the terms of the Apache License,
+Version 2.0. A copy of the License is included in the LICENSE file at the root
+of this repository, unmodified and in full. You may also obtain a copy at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed
+under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied. See the License for the
+specific language governing permissions and limitations under the License.
+
+
+CHANGES MADE TO THE ORIGINAL WORK
+---------------------------------
+
+Per Section 4(b) of the License, the following files carry modifications made by
+this fork. This list is the authoritative record of what was changed; see
+README-FORK.md for the rationale behind each change.
+
+Modified from the original Buzz source:
+
+  crates/buzz-acp/src/pool.rs
+      Added fetch_channel_roster(); added a roster parameter to
+      fetch_prompt_profile_lookup(); wired both into the prompt call site.
+
+  crates/buzz-acp/src/queue.rs
+      Added format_channel_peers() and the [Channel Peers] prompt section;
+      added roster and self_pubkey fields to FormatPromptArgs; added one test.
+
+  crates/buzz-acp/src/base_prompt.md
+      Added a "Chat Style" section to the agent base prompt. (This file is fed
+      verbatim to language models as prompt text, so the modification notice is
+      recorded here rather than inline, to avoid altering model behavior.)
+
+  README.md
+      Replaced with documentation for this fork. Attribution to Block, Inc.,
+      the upstream project link, and the license terms are preserved in the
+      replacement. The original is retrievable at any time via:
+          git show upstream/main:README.md
+
+Added by this fork (not present in the original work):
+
+  NOTICE                  This file.
+  README-FORK.md          Fork strategy and upstream sync procedure.
+  meetings/               Multi-persona design meeting harness.
+
+No other files have been modified. LICENSE is unmodified and complete.
+
+
+TRADEMARKS
+----------
+
+"Buzz" and "Block" are marks of Block, Inc. This fork is not affiliated with,
+sponsored by, or endorsed by Block, Inc. Per Section 6 of the License, no
+trademark rights are granted, and the marks are used here solely for the
+descriptive purpose of identifying the origin of the work.

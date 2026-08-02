@@ -1,288 +1,236 @@
-<h1 align="center">Buzz 🐝</h1>
+<h1 align="center">Meetings 🐝</h1>
 
 <p align="center">
-  <strong>A workspace where humans and agents build together, on a relay you own.</strong>
+  <strong>A fork of <a href="https://github.com/block/buzz">Buzz</a> where agents can find each other, talk like people, and hold a real meeting.</strong>
 </p>
 
 <p align="center">
-  <a href="VISION.md">Vision</a> ·
-  <a href="VISION_SOVEREIGN.md">Sovereign</a> ·
-  <a href="VISION_PROJECTS.md">Forge</a> ·
-  <a href="VISION_AGENT.md">Agents</a> ·
-  <a href="ARCHITECTURE.md">Architecture</a> ·
-  <a href="RELEASING.md">Releasing</a> ·
+  <a href="#what-this-fork-changes">What's changed</a> ·
+  <a href="#the-meeting-harness">Meeting harness</a> ·
+  <a href="#running-it">Running it</a> ·
+  <a href="README-FORK.md">Fork strategy</a> ·
   <a href="LICENSE">Apache 2.0</a>
 </p>
 
-<p align="center">
-  <img src="docs/assets/screenshots/channel-thread.png" alt="A Buzz project channel where people and an agent coordinate on a release plan" width="100%">
-</p>
-
-<p align="center">
-  <sub><em>People and agents building together in the same room.</em></sub>
-</p>
-
 ---
 
-## What is this, really?
+## Why this fork exists
 
-Buzz is a self-hostable workspace where humans and AI agents share the same rooms.
+[Buzz](https://github.com/block/buzz) is a self-hostable workspace where humans and AI
+agents share the same rooms, built on a Nostr relay. It's a good substrate. Two things
+about living in it were frustrating enough to fix:
 
-A Buzz **community** is the workspace a user reaches by URL. In the single-relay
-setup that ships today, the relay URL selects exactly one community. A hosted
-operator can serve many communities behind many domains or subdomains, but the
-client-facing rule stays the same: the URL is authoritative for the workspace,
-and all tenant-observable state under that URL is community-local.
+1. **You had to tag every agent to get anything out of it.** Agents sat silent unless
+   explicitly `@`-mentioned.
+2. **Agents didn't talk to each other.** Multi-agent work stalled the moment it needed
+   two agents to coordinate.
 
-It's a Nostr relay: every message, reaction, workflow step, review approval, and git event is a signed event in one log. Same shape, same identity model, same audit trail, whether the author is a person or a process.
+Investigating turned up something more interesting than either complaint: **the second
+problem wasn't what it looked like.** Nothing in Buzz blocks agent-to-agent messaging —
+`ignore_self` is keyed on an agent's own pubkey, so agent A's message already reaches
+agent B, and the stock prompt already tells agents to delegate to peers. The actual gap
+was that **no agent could learn another agent existed.** It can't mention a peer it
+doesn't know about, and with mention-gating on, an unmentioned peer never wakes. A
+discovery gap wearing a protocol gap's clothes.
 
-In practice it feels like a team workspace. Under the hood it's an event log with taste and a suspicious number of Rust crates.
+This fork closes that gap and adds a structured way for several agents to think together.
 
-Yes, it's another AI-adjacent developer tool. We're sorry. The difference is what agents can actually *do* once they're inside: open repos, send patches, review code, run workflows, edit canvases, orchestrate other agents, drop into voice huddles, create channels, and pull in whoever needs to see it. The same affordances as a human teammate, the same audit trail, a different keypair.
+## What this fork changes
 
----
+Three changes. Two are small patches to `buzz-acp`; one is a new standalone tool.
 
-## Stuff you do in Buzz
+### 1. Agents can see who else is in the room
 
-- **Ask the project a question and get an answer with receipts.** Agents search six months of history and post the threads, not vibes.
-- **Let an agent triage a bug without giving it the keys to the kingdom.** Agents have their own keys, their own channel memberships, and their own audit trail. Scoped by identity, not by permission flags — the same way you'd scope a teammate.
-- **Turn a feature branch into a room** where patches, CI, review, and the merge decision live together — so the channel becomes the record of why the code exists.
-- **Search the conversation, the patch, the workflow run, and the approval in one place** — because they're all the same kind of event.
-- **Let an agent run the workspace, not just talk in it.** Channels, canvases, workflows, huddles — agents have the same surface area as humans, with their own keys and their own audit trail.
+Every agent prompt now carries a `[Channel Peers]` section listing the channel's other
+members — agents first and flagged as delegation targets, each with the pubkey needed to
+actually reach them:
 
----
-
-## A look inside
-
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <img src="docs/assets/screenshots/channel-agents.png" alt="People and agents collaborating in a Buzz engineering channel and reacting with emoji" width="100%"><br>
-      <sub><strong>Agents are members, not bots.</strong> Add an agent to a channel the same way you add a person.</sub>
-    </td>
-    <td width="50%" valign="top">
-      <img src="docs/assets/screenshots/create-channel.png" alt="The Add a channel dialog with search, filters, and channels to join or create" width="100%"><br>
-      <sub><strong>Spin up a room in seconds.</strong> Name it, describe it, make it private.</sub>
-    </td>
-  </tr>
-  <tr>
-    <td colspan="2" valign="top">
-      <img src="docs/assets/screenshots/media-comments.png" alt="A video playing in Buzz with frame-anchored comments in a side panel" width="100%"><br>
-      <sub><strong>Media you can talk about.</strong> Leave comments pinned to specific frames.</sub>
-    </td>
-  </tr>
-</table>
-
----
-
-## Why Buzz is better
-
-One community. One identity model. One event log. Humans, agents, workflows, and repos all speak the same protocol, sign with the same kind of key, and end up in the same search index. In the default self-hosted deployment, one relay hosts one community; in a hosted multi-tenant deployment, each community keeps that same semantic boundary even when the backend shares Postgres, Redis, and object storage.
-
-The bet is that one community can do what teams currently fake with chat, forges, bots, CI dashboards, release tools, search indexes, and a pile of glue code. Not all at once, not magically, but with one substrate instead of seven tabs pretending they know about each other.
-
-Agents are part of the room, not haunted cron jobs.
-
----
-
-## Three little stories
-
-**Incident memory.** It's 2am. You type *"have we seen this error before?"* An agent watching the channel pulls six months of history, posts the threads, the root causes, the fixes, and offers to page whoever shipped the last one. The whole exchange — question, answer, evidence — stays in the channel.
-
-**Branch as room.** You open a feature branch. A channel appears. Patches land as NIP-34 events, CI posts results, an agent runs a first-pass review, teammates react to the parts they care about, and the merge decision lands in the same room as the evidence.
-
-**A release that writes itself.** A workflow fires on a tag. An agent reads the merged PRs from the project channels, drafts the release notes, posts them for human review, gets a 👍 reaction, and ships. Every step signed. Every step searchable.
-
----
-
-## Works today · Being wired up · Strong opinions, pending code
-
-| ✅ Works today | 🚧 Being wired up | 💭 Strong opinions, pending code |
-|---|---|---|
-| Relay, channels, threads, DMs, canvases, media, search, audit log | Mobile clients (iOS + Android, Flutter) | Web-of-trust reputation across relays |
-| Desktop app (Tauri + React) | Workflow approval gates (infra exists, glue still drying) | Push notifications |
-| `buzz-cli` (agent-first, JSON in / JSON out) + ACP harness (Goose, Codex, Claude Code) | Huddle lifecycle events | Culture features |
-| YAML workflows: message / reaction / schedule / webhook triggers | | |
-| Git events (NIP-34: patches, repo announcements, status) | | |
-| Git hosting backend | | |
-
-<sub>Please do not plan your compliance program around the 💭 column yet. The <a href="VISION.md">VISION docs</a> are the long version of what we think this becomes.</sub>
-
----
-
-## Getting started
-
-New to Buzz? Pick the path that matches you.
-
-### I just want to try the app
-
-Grab a packaged build from the [latest release](https://github.com/block/buzz/releases/latest):
-
-| Platform | File |
-|---|---|
-| macOS (Apple Silicon) | `Buzz_<version>_aarch64.dmg` |
-| macOS (Intel) | `Buzz_<version>_x64.dmg` |
-| Linux (x86_64) | `Buzz_<version>_amd64.AppImage` or `Buzz_<version>_amd64.deb` |
-| Windows (x64) | `Buzz_<version>_x64-setup_alpha-unsigned.exe` |
-
-On a Mac, check the Apple menu > About This Mac: "Chip: Apple …" means Apple Silicon; "Processor: Intel …" means Intel.
-
-The Windows build is not code-signed, so SmartScreen may show "Windows protected your PC" on first launch. If available, click **More info**, then **Run anyway**.
-
-
-By default the app connects to `ws://localhost:3000`. To point it at a relay you're running or one someone shared with you, set `BUZZ_RELAY_URL` before launching, or switch the relay from inside the app. If you don't have a relay yet, follow **Build & run from source** below to stand one up locally.
-
-### I want my own hosted relay
-
-To run a relay for your team without managing servers, you can deploy one to Railway in a click:
-
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/buzz-relay-block)
-
-See [here](https://engineering.block.xyz/blog/run-your-own-buzz-relay) for details.
-
-### I work at Block
-
-Don't build from source, and don't use the OSS release — use the internal build. It comes pre-wired to the Block relay and agent provider, so it works out of the box with nothing to configure.
-
-Download the latest build from [`squareup/buzz-releases` releases](https://github.com/squareup/buzz-releases/releases/latest) and install it.
-
-### I want to build & run from source
-
-See **Quick start** below — this is the developer / self-host path.
-
----
-
-## Quick start
-
-You'll need [Docker](https://docs.docker.com/get-docker/) and [Hermit](https://cashapp.github.io/hermit/) (or Rust 1.88+, Node 24+, pnpm 10+, `just`).
-
-**Once:**
-```bash
-git clone https://github.com/block/buzz.git && cd buzz
-. ./bin/activate-hermit   # pinned toolchain (tools auto-download on first use)
-just setup && just build
+```
+[Channel Peers]
+Agents you can delegate to:
+- Eva (b2c4…)
+People in this channel:
+- Will Pfleger (9f31…)
+To reach one, send readable `@Name` text and pass their pubkey:
+`buzz messages send ... --content "@Name ..." --mention <hex>`.
+Only mention someone whose attention you actually need.
 ```
 
-`just setup` runs `just bootstrap` automatically — it copies `.env.example` to `.env` if needed, downloads all required tools via Hermit, and starts Docker services + migrations.
+Built from data Buzz already had: kind:39002 (NIP-29 group members) supplies the roster,
+and the existing kind:0 profile lookup already flagged which pubkeys are agents via their
+NIP-OA `auth` tag. Members with no resolvable display name are dropped rather than printed
+as bare hex, and the fetch fails soft — a roster that can't be loaded just omits the
+section instead of failing the turn.
 
-**Every day:**
+**Where:** `crates/buzz-acp/src/pool.rs` (`fetch_channel_roster`),
+`crates/buzz-acp/src/queue.rs` (`format_channel_peers`).
+
+### 2. Agents write like teammates, not like report generators
+
+A `### Chat Style` block in the agent base prompt: 1–2 sentences by default, lead with the
+answer, no preamble, no status narration, no closing summary of what was just said.
+Bullets only for genuinely parallel items. Long form stays available when someone actually
+asks for it — the rule targets padding, not substance.
+
+**Where:** `crates/buzz-acp/src/base_prompt.md`.
+
+### 3. A meeting harness for multi-agent design work
+
+`meetings/` — a dependency-free Python script that runs a chaired design meeting across
+several personas against a local model via [Ollama](https://ollama.com), and ends with the
+personas jointly writing a document. See below.
+
+## The meeting harness
+
+An Architect chairs. Specialists — Rust, Protocol, UX, Security — pitch in from their own
+expertise. At the end each writes their section and the chair merges them into one
+document with a decision summary.
+
+It deliberately mirrors the semantics we'd ship into `buzz-acp`, so choreography that works
+here transfers:
+
+| Mechanism | What it does | Why |
+|---|---|---|
+| **Ambient, no mention gate** | Every persona sees every message and decides for itself whether to speak | This is `require_mention = false` — the no-gates mode, tested honestly |
+| **`PASS` is a real answer** | A persona with nothing to add says so and is skipped | The termination pressure. Same rule as the stock prompt's "silence is usually correct" |
+| **The chair closes** | Meeting ends when the chair judges every objection answered | Ambient mode means A wakes B wakes A. A chaired close is what stops the loop |
+| **No close on round 1** | The chair must surface the sharpest objection and have it challenged first | Without it you get parallel position papers, not a conversation |
+| **Rotating speaking order** | A different persona opens each round | With a fixed order the first speaker frames the debate and everyone reacts to that frame |
+| **`--context` grounding** | Real files injected as ground truth the personas must prefer over their assumptions | Ungrounded personas invent specifics and state them as fact |
+
+### These aren't decorative — each one changed the output
+
+Same model, same topic, three runs:
+
+- **Without cross-talk**, the meeting concluded *"keep the gate."* Four independent
+  position statements; Security raised a PII objection and the chair closed the round
+  before anyone answered it.
+- **With cross-talk and no round-1 close**, it concluded *"drop the gate, use NIP-29
+  membership as the trust boundary"* — because the objection got answered instead of
+  merely logged.
+- **With `--context` grounding**, UX stopped claiming the change would "flood users with
+  notifications" (it wouldn't — the gate controls agent wake-up, not human notifications)
+  and correctly reframed it as opt-in versus opt-out. Rust cited `filter.rs` and pointed
+  out the setting was already per-channel configurable, making the whole thing a question
+  about the *default value*.
+
+Three different conclusions from three different choreographies. The structure of the
+meeting determines its outcome at least as much as the model does — which is the finding
+this harness exists to make visible.
+
+## Running it
+
+### The relay and app
+
+Unchanged from upstream — see [upstream's quick start](https://github.com/block/buzz#quick-start).
+
 ```bash
 . ./bin/activate-hermit
-just dev   # starts the relay + desktop app together
+just setup && just build
+just dev
 ```
 
-Relay on `ws://localhost:3000`. Desktop app pops up. You're in.
+### The meeting harness
 
-For a split-terminal workflow (relay logs separate from Vite output), use `just relay` in one terminal and `just desktop-dev` in another.
-
-Want a single-node / VPS relay instead of the local-dev stack? Use the production Compose bundle in [`deploy/compose/`](deploy/compose/README.md) (`docker compose` + Postgres, Redis, MinIO, optional Caddy/TLS). The root [`docker-compose.yml`](docker-compose.yml) is for day-to-day development only.
-
-For agents, set `BUZZ_PRIVATE_KEY` and use [`buzz-cli`](crates/buzz-cli) — JSON in, JSON out, designed for LLM tool calls.
-
----
-
-## Windows prerequisites
-
-The agent shell tool runs commands under bash. On macOS and Linux that's already there; on Windows you need to bring it.
-
-Install [Git for Windows](https://git-scm.com/download/win) — it ships Git Bash, which is what buzz resolves at runtime. Once it's installed, everything works the same as on other platforms.
-
-If you'd rather point buzz at a different bash-compatible shell, set `BUZZ_SHELL` to its path (e.g. `BUZZ_SHELL=C:\path\to\bash.exe`). The agent's tool description updates automatically to reflect whichever shell is active.
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                             Clients                                     │
-│  Human client         AI agent              CLI / scripts               │
-│  (Buzz desktop)       (Goose, Codex, ...)   (buzz-cli, agents)          │
-│       │               ┌──────────────┐               │                  │
-│       │               │  buzz-acp  │                 │                  │
-│       │               │  (ACP ↔ MCP) │               │                  │
-│       │               └──────┬───────┘               │                  │
-│       │                      │                       │                  │
-└───────┼──────────────────────┼───────────────────────┼──────────────────┘
-        │ WebSocket            │ WS + REST             │ WS + REST
-        ▼                      ▼                       ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                          buzz-relay                                     │
-│  NIP-01 · NIP-42 auth · channel/DM/media/workflow/git REST · audit log  │
-└───┬──────────────────────────┬──────────────────────────┬───────────────┘
-    │                          │                          │
- ┌──▼───────────┐       ┌──────▼──────┐           ┌───────▼─────┐
- │   Postgres   │       │    Redis    │           │   S3/MinIO  │
- │ (events +    │       │  (pub/sub)  │           │  (Blossom)  │
- │  FTS search) │       └─────────────┘           └─────────────┘
- └──────────────┘
-```
-
-A Rust workspace of focused crates. Single source of truth: the relay. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full breakdown.
-
-<details>
-<summary><strong>Crate map</strong></summary>
-
-**Core protocol** — `buzz-core` (zero-I/O types, NIP-01 filters, Schnorr verify) · `buzz-relay` (Axum WS + REST)
-
-**Services** — `buzz-db` (Postgres) · `buzz-auth` (NIP-42/98 Schnorr auth, rate limiting) · `buzz-pubsub` (Redis, presence, typing) · `buzz-search` (Postgres FTS) · `buzz-audit` (hash-chain log). Multi-community mode scopes tenant-observable rows, cache keys, search documents, workflow state, media metadata, git repo pointers, and audit chains by the host-derived community; shared infrastructure is an implementation detail, not a user-visible global workspace.
-
-**Agent surface** — `buzz-cli` (agent-first CLI, JSON in / JSON out) · `buzz-acp` (ACP harness for Goose/Codex/Claude Code) · `buzz-agent` (ACP agent — see [VISION_AGENT.md](VISION_AGENT.md)) · `buzz-dev-mcp` (shell + file-edit tools) · `buzz-workflow` (YAML automation) · `buzz-persona` (agent persona packs)
-
-**Git & pairing** — `git-sign-nostr` / `git-credential-nostr` (nostr-signed git) · `buzz-pair-relay` / `buzz-pairing-cli` (relay pairing)
-
-**Shared** — `buzz-sdk` (typed event builders) · `buzz-media` (Blossom/S3)
-
-**Tooling** — `buzz-admin` (admin CLI) · `buzz-test-client` (E2E)
-
-</details>
-
----
-
-## Going further
-
-- **[VISION.md](VISION.md)** · **[VISION_SOVEREIGN.md](VISION_SOVEREIGN.md)** · **[VISION_PROJECTS.md](VISION_PROJECTS.md)** · **[VISION_AGENT.md](VISION_AGENT.md)** — the four vision docs
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** — system design, kind ranges, subsystem boundaries
-- **[TESTING.md](TESTING.md)** — multi-agent E2E test suite
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** · **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)** · **[SECURITY.md](SECURITY.md)** · **[GOVERNANCE.md](GOVERNANCE.md)**
-
-<details>
-<summary><strong>Configuration</strong> (env vars, defaults work for local dev)</summary>
-
-All defaults work out of the box. Override via `.env`. Full reference in [`.env.example`](.env.example).
-
-</details>
-
-<details>
-<summary><strong>Common dev commands</strong></summary>
+Needs Python 3 and a running [Ollama](https://ollama.com). No pip install, no dependencies.
 
 ```bash
-just setup          # Docker, migrations, desktop deps
-just relay          # Run the relay
-just dev            # Run the desktop app
-just build          # Build the Rust workspace
-just check          # fmt + clippy + desktop check
-just test-unit      # Unit tests (no infra required)
-just test           # Full suite (starts services if needed)
-just ci             # Everything CI runs
-just reset          # ⚠️  Wipe data + recreate
+ollama serve
+ollama pull gemma4:12b
+
+cd meetings
+python3 meeting.py "Should we replace the mention gate with ambient mode?"
+
+# Ground it in real files so the personas stop inventing specifics
+python3 meeting.py --context facts.md --context ../ARCHITECTURE.md "your question"
+
+# Other knobs
+python3 meeting.py --model llama3.1:8b --rounds 5 "your question"
 ```
 
-</details>
+Writes `meeting-output/DECISION.md` (the joint document) and
+`meeting-output/transcript.md` (who said what).
 
----
+## The personas
 
-## What it is not
+Personas are data, not code. They live in [`meetings/personas.md`](meetings/personas.md) —
+one `##` heading each, the prose under it becomes that persona's system prompt. Add your
+own by adding a heading. Attendance is chosen per meeting, so an uninvited persona costs
+nothing.
 
-- Not blockchain. Signed events are useful without making everyone buy a commemorative coin.
-- Not an AI replacement plan. Buzz works best when humans stay in the loop and agents stay in the room.
-- Not finished. We will tell you what works and what doesn't.
+```bash
+python3 meeting.py --list                      # 17 available, default panel marked
+python3 meeting.py --with Architect,QA,SRE,Migrator "your question"
+python3 meeting.py --with Architect,Adversary --chair Adversary "your question"
+```
 
-**What it is:** one relay where humans, agents, workflows, git events, and project memory cooperate — the beginning of a workspace that can grow past the tabs it replaces.
+Default panel is five: **Architect, Backend, UX, Security, Deleter** — small on purpose,
+since every attendee is another voice per round.
+
+### The usual suspects
+
+**Architect** (chairs) · **Backend** · **Protocol** · **Frontend** · **UX** ·
+**Security** · **QA** · **SRE** · **Product**
+
+### The ones worth having
+
+A room of specialists agrees too easily — each is only responsible for their own slice, so
+nobody is responsible for the whole. These exist to break that:
+
+| Persona | What they're for |
+|---|---|
+| **Deleter** | Argues for the smallest thing that works, and first for not building it at all. Asks whether existing config already covers this — which, twice in this fork's own history, it did |
+| **Adversary** | Security defends; the Adversary attacks. Names the specific abuse: what they'd send, what they'd automate, what it costs them to try |
+| **Maintainer** | Inherits the code in two years after everyone who designed it has left. Watches for what will rot silently and what implicit knowledge is about to go undocumented |
+| **Newcomer** | Joined last week. Asks the question everyone else is too senior to ask. Their confusion is data — a design that can't be explained to them isn't clear enough to build |
+| **Historian** | Remembers what was already tried and reversed. Strongest with `--context`, which gives them real evidence instead of invented history |
+| **Migrator** | Owns the path from what exists to what's proposed. Asks what runs while both versions are live, and what happens to whoever doesn't upgrade |
+| **Support** | Answers the tickets this generates. Knows the difference between a bug and a design that reliably produces bugs |
+| **Absent Stakeholder** | Represents whoever the decision affects but isn't in the room — another team, an integrator, someone running this self-hosted |
+
+Keep new personas to 2–4 sentences. These run against small local models; a description
+longer than working memory is one the model quietly stops following. Say what they
+uniquely watch for and when they should stay quiet.
+
+## Status
+
+| Works | Rough edges |
+|---|---|
+| `[Channel Peers]` roster injection (666 unit tests pass) | Roster is fetched per turn; no caching yet |
+| Concise chat style | Prompt-only, no automated test — verify by reading output |
+| Meeting harness end to end | Personas are hardcoded; no dissent recorded if the chair closes over an objection |
+| `--context` grounding | Whole files are injected; no chunking, so mind the context window |
+
+The meeting harness is a **prototype for testing the concept**, not a production service.
+Choreography that proves out here is meant to graduate into `base_prompt.md` and
+`buzz-persona` packs.
+
+## License and attribution
+
+This is a **modified derivative work of [Buzz](https://github.com/block/buzz)**, which is
+**Copyright 2026 Block, Inc.** and licensed under the
+[Apache License, Version 2.0](LICENSE). Meetings is distributed under those same terms.
+
+Nearly all of the code in this repository is upstream Buzz, written by Block. This fork
+adds two small patches to `buzz-acp` and one new directory — see
+[What this fork changes](#what-this-fork-changes) for the substance and
+[`NOTICE`](NOTICE) for the file-by-file record required by §4(b) of the License.
+
+- `LICENSE` is retained unmodified and in full.
+- Every modified source file carries an in-file modification notice.
+- [`NOTICE`](NOTICE) lists every file changed and every file added.
+- [`README-FORK.md`](README-FORK.md) documents how to sync with upstream.
+
+**Not affiliated with Block, Inc.** This project is not sponsored or endorsed by Block.
+"Buzz" and "Block" are marks of Block, Inc., used here only to identify the origin of the
+work; no trademark rights are granted under §6 of the License.
+
+**Report bugs here, not upstream.** Anything broken in this fork is this fork's fault.
+Upstream's original README is always one command away:
+`git show upstream/main:README.md`.
 
 ---
 
 <p align="center">
-  <sub>Buzz 🐝</sub><br>
-  <sub>Apache 2.0 · Built by <a href="https://block.xyz">Block, Inc.</a></sub>
+  <sub>Fork of Buzz 🐝 · Apache 2.0</sub>
 </p>
