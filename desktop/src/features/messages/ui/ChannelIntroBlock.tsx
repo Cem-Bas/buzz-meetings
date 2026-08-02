@@ -37,6 +37,13 @@ export function ChannelIntroBlock({
   intro: ChannelIntro;
 }) {
   const meeting = useCreateMeetingFlow();
+  const isMeeting = isMeetingChannel(intro.channelName);
+
+  // "the beginning of the private channel" reads wrong for a meeting. Only
+  // meetings are relabelled; every other channel keeps its own wording.
+  const kindLabel = isMeeting
+    ? intro.channelKindLabel.replace(/channel/i, "meeting")
+    : intro.channelKindLabel;
 
   // The meeting card is appended here rather than in useChannelIntro so the
   // dialog can live beside the button that opens it, instead of threading
@@ -44,7 +51,7 @@ export function ChannelIntroBlock({
   const actions: ChannelIntroAction[] = React.useMemo(() => {
     const base = intro.actions ?? [];
     // No "Create a meeting" inside a meeting — you are already in one.
-    if (!intro.actions?.length || isMeetingChannel(intro.channelName)) {
+    if (!intro.actions?.length || isMeeting) {
       return base;
     }
     return [
@@ -59,7 +66,7 @@ export function ChannelIntroBlock({
         testId: "channel-intro-action-create-meeting",
       },
     ];
-  }, [intro.actions, intro.channelName, meeting.openDialog]);
+  }, [intro.actions, isMeeting, meeting.openDialog]);
 
   return (
     <div
@@ -80,10 +87,7 @@ export function ChannelIntroBlock({
       </p>
       <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">
         This is the beginning of the{" "}
-        <span className="font-medium text-foreground">
-          {intro.channelKindLabel}
-        </span>
-        .
+        <span className="font-medium text-foreground">{kindLabel}</span>.
       </p>
       {intro.description ? (
         <p className="mt-2 max-w-xl text-sm leading-5 text-muted-foreground">
