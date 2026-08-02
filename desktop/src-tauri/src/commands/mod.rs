@@ -6,6 +6,8 @@ mod agent_metric_archive;
 mod agent_model_process;
 mod agent_models;
 mod agent_models_env;
+mod agent_models_ollama;
+pub(crate) use agent_models_ollama::with_local_defaults as ollama_local_defaults;
 mod agent_providers;
 mod agent_settings;
 mod agent_update_rollback;

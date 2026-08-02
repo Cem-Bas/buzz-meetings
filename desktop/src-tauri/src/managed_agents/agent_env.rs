@@ -65,12 +65,15 @@ fn build_env_map(
 ///
 /// Returns a new map with baked pairs as the floor and `merged_env` on top.
 /// OSS builds return `merged_env` unchanged (empty baked map → no-op).
+/// `provider` lets a provider that implies its own endpoint fill in defaults
+/// here — currently only Ollama, whose local server needs no credential.
 pub(crate) fn discovery_env_with_baked_floor(
     merged_env: std::collections::BTreeMap<String, String>,
+    provider: Option<&str>,
 ) -> std::collections::BTreeMap<String, String> {
     let mut env = baked_build_env();
     env.extend(merged_env);
-    env
+    crate::commands::ollama_local_defaults(env, provider)
 }
 
 /// Inject baked-in provider/model defaults and generic env pairs onto `cmd`.
@@ -343,7 +346,7 @@ mod tests {
         );
         merged.insert("OTHER_KEY".to_string(), "other".to_string());
 
-        let result = discovery_env_with_baked_floor(merged);
+        let result = discovery_env_with_baked_floor(merged, None);
 
         assert_eq!(
             result.get("DATABRICKS_HOST").map(String::as_str),

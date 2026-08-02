@@ -269,14 +269,14 @@ fn resolve_effective_agent_env_with_def(
     );
     env.extend(user_env);
 
-    // Buzz shared compute is a native Buzz provider. Translate it to buzz-agent's
-    // OpenAI-compatible transport only in the effective runtime environment.
+    // Local Ollama, like shared compute, is a Buzz provider name over buzz-agent's OpenAI transport.
     #[cfg(feature = "mesh-llm")]
     super::apply_relay_mesh_env(
         &mut env,
         effective_provider.as_deref(),
         effective_model.as_deref(),
     );
+    env = crate::commands::ollama_local_defaults(env, effective_provider.as_deref());
 
     EffectiveAgentEnv {
         env,

@@ -125,10 +125,43 @@ export const PERSONA_LLM_PROVIDER_OPTIONS: readonly PersonaModelOption[] = [
   { id: "anthropic", label: "Anthropic" },
   { id: "openai", label: "OpenAI" },
   { id: "openai-compat", label: "OpenAI-compatible" },
+  { id: "ollama", label: "Ollama (local)" },
   { id: "openrouter", label: "OpenRouter" },
   { id: "relay-mesh", label: "Buzz shared compute" },
   { id: "databricks", label: "Databricks" },
   { id: "databricks_v2", label: "Databricks v2" },
+];
+
+/**
+ * Models offered for the Claude Code harness.
+ *
+ * Shipped as a static list because the harness cannot supply one: the ACP
+ * adapter (`@agentclientprotocol/claude-agent-acp`) returns `models: null`
+ * from `session/new`, so live discovery has nothing to read and the dropdown
+ * would otherwise offer only "Custom model…". Verified by probing the adapter
+ * directly. Keep in sync with Anthropic's published model ids.
+ */
+const CLAUDE_MODEL_OPTIONS: readonly PersonaModelOption[] = [
+  DEFAULT_MODEL_OPTION,
+  { id: "claude-opus-5", label: "Claude Opus 5" },
+  { id: "claude-sonnet-5", label: "Claude Sonnet 5" },
+  { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" },
+  { id: "claude-opus-4-8", label: "Claude Opus 4.8" },
+];
+
+/**
+ * Models offered for the Codex harness.
+ *
+ * Also static, for the same reason as Claude: the codex ACP adapter does not
+ * publish a model list. Deliberately short — these are the only ids with a
+ * verifiable source (`codex --help` and the CLI's own config default).
+ * `codex models` is an interactive TUI and cannot be scraped, so rather than
+ * invent a catalog, anything else goes through "Custom model…".
+ */
+const CODEX_MODEL_OPTIONS: readonly PersonaModelOption[] = [
+  DEFAULT_MODEL_OPTION,
+  { id: "gpt-5.5", label: "GPT-5.5" },
+  { id: "o3", label: "o3" },
 ];
 
 const PERSONA_MODEL_OPTIONS_BY_RUNTIME: Record<
@@ -137,8 +170,8 @@ const PERSONA_MODEL_OPTIONS_BY_RUNTIME: Record<
 > = {
   goose: [DEFAULT_MODEL_OPTION],
   "buzz-agent": [DEFAULT_MODEL_OPTION],
-  claude: [DEFAULT_MODEL_OPTION],
-  codex: [DEFAULT_MODEL_OPTION],
+  claude: CLAUDE_MODEL_OPTIONS,
+  codex: CODEX_MODEL_OPTIONS,
 };
 
 export function getRuntimePersonaModelOptions(

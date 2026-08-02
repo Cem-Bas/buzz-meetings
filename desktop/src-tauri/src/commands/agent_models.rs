@@ -94,7 +94,7 @@ pub async fn get_agent_models(
         command: _,
     } = discovery;
 
-    let merged_env = discovery_env_with_baked_floor(merged_env);
+    let merged_env = discovery_env_with_baked_floor(merged_env, saved_provider.as_deref());
     // Resolve against the baked/process env when the record saved no provider,
     // so a build-provided provider still gets live discovery.
     let effective_provider =
@@ -228,7 +228,7 @@ pub async fn discover_agent_models(
         &input.definition_env,
         &input.env_vars,
     );
-    let merged_env = discovery_env_with_baked_floor(merged_env);
+    let merged_env = discovery_env_with_baked_floor(merged_env, input.provider.as_deref());
     // Recover a build-provided provider when the form has none, so the create
     // dialog discovers live models instead of falling through to the subprocess.
     let effective_provider = effective_discovery_provider(
@@ -344,7 +344,7 @@ fn is_openai_compatible_provider(provider: Option<&str>) -> bool {
             .map(str::trim)
             .map(str::to_ascii_lowercase)
             .as_deref(),
-        Some("openai" | "openai-compat")
+        Some("openai" | "openai-compat" | "ollama")
     )
 }
 

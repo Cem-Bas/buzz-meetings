@@ -35,6 +35,7 @@ import {
   CUSTOM_PROVIDER_DROPDOWN_VALUE,
   getPersonaProviderOptions,
   getProviderApiKeyEnvVar,
+  getRuntimePersonaModelOptions,
   runtimeSupportsLlmProviderSelection,
 } from "@/features/agents/ui/agentConfigOptions";
 import {
@@ -358,7 +359,7 @@ export function AgentConfigFields({
   }, [configIsValid, onValidityChange]);
 
   const {
-    discoveredModelOptions,
+    discoveredModelOptions: liveModelOptions,
     modelDiscoveryLoading,
     modelDiscoveryStatus,
     modelDiscoverySuccessfulEmpty,
@@ -370,6 +371,8 @@ export function AgentConfigFields({
     provider: providerForDiscovery,
     selectedRuntime,
   });
+  const discoveredModelOptions =
+    liveModelOptions ?? getRuntimePersonaModelOptions(selectedRuntimeId);
   const modelControlVisible = shouldRenderModelControl({
     discoveredModelOptions: dependentFieldsDisabled
       ? null
