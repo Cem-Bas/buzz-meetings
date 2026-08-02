@@ -14,6 +14,14 @@
   <a href="#license-and-attribution">License</a>
 </p>
 
+<p align="center">
+  <img src="docs/assets/screenshots/create-meeting.png" alt="The Create a meeting dialog: a topic field and a checklist of personas — Architect, Backend, Protocol, Frontend, UX, Security, QA, SRE — with five selected and the Architect chairing" width="70%">
+</p>
+
+<p align="center">
+  <sub><em>Pick a topic, pick who shows up.</em></sub>
+</p>
+
 ---
 
 ## Functions
@@ -95,6 +103,10 @@ Meeting agents are created with `respondTo: "anyone"` rather than the `owner-onl
 default — that is the whole point, since owner-only agents only wake when *you* mention
 them and would never hear each other. That also means they respond to anyone in the
 channel, which is why meeting channels are created private.
+
+<p align="center">
+  <img src="docs/assets/screenshots/create-meeting.png" alt="The Create a meeting dialog" width="70%">
+</p>
 
 **Source:** `desktop/src/features/meetings/`. Personas are read from the same
 `meetings/personas.md` the harness uses, so the two can never disagree.
