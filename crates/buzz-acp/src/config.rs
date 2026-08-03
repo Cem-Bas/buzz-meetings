@@ -1280,11 +1280,22 @@ pub fn resolve_channel_filters(
             }
         }
         SubscribeMode::All => {
+            // Same default kinds as Mentions mode. A None (wildcard) here
+            // delivers reaction/typing/receipt events too — and since the
+            // harness posts a 👀 reaction on pickup, wildcard turns a
+            // multi-agent channel into a self-sustaining reaction storm.
+            let kinds = config.kinds_override.clone().unwrap_or_else(|| {
+                vec![
+                    KIND_STREAM_MESSAGE,
+                    KIND_WORKFLOW_APPROVAL_REQUESTED,
+                    KIND_STREAM_REMINDER,
+                ]
+            });
             for ch in &target_channels {
                 result.insert(
                     *ch,
                     ChannelFilter {
-                        kinds: config.kinds_override.clone(),
+                        kinds: Some(kinds.clone()),
                         require_mention: false,
                     },
                 );
@@ -1376,7 +1387,15 @@ pub fn resolve_dynamic_channel_filter(
             require_mention: !config.no_mention_filter,
         }),
         SubscribeMode::All => Some(ChannelFilter {
-            kinds: config.kinds_override.clone(),
+            // Same default kinds as Mentions — see resolve_channel_filters:
+            // wildcard here feeds the harness's own pickup reactions back in.
+            kinds: Some(config.kinds_override.clone().unwrap_or_else(|| {
+                vec![
+                    KIND_STREAM_MESSAGE,
+                    KIND_WORKFLOW_APPROVAL_REQUESTED,
+                    KIND_STREAM_REMINDER,
+                ]
+            })),
             require_mention: false,
         }),
         SubscribeMode::Config => {
@@ -1769,7 +1788,14 @@ mod tests {
     }
 
     #[test]
-    fn test_all_mode_wildcard() {
+    fn test_all_mode_defaults_to_message_kinds() {
+        // Fork change: All mode no longer defaults to wildcard — wildcard
+        // delivers the harness's own 👀 pickup reactions back to every
+        // ambient agent, which in a multi-agent channel becomes a
+        // self-sustaining reaction storm. Default matches Mentions mode.
+        use buzz_core::kind::{
+            KIND_STREAM_MESSAGE, KIND_STREAM_REMINDER, KIND_WORKFLOW_APPROVAL_REQUESTED,
+        };
         let config = test_config(SubscribeMode::All);
         let channels = vec![Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4()];
         let result = resolve_channel_filters(&config, &channels, &[]);
@@ -1777,9 +1803,14 @@ mod tests {
         assert_eq!(result.len(), 3);
         for ch in &channels {
             let f = result.get(ch).unwrap();
-            assert!(
-                f.kinds.is_none(),
-                "all mode with no override = wildcard kinds"
+            assert_eq!(
+                f.kinds,
+                Some(vec![
+                    KIND_STREAM_MESSAGE,
+                    KIND_WORKFLOW_APPROVAL_REQUESTED,
+                    KIND_STREAM_REMINDER,
+                ]),
+                "all mode with no override = message kinds, not wildcard"
             );
             assert!(!f.require_mention);
         }

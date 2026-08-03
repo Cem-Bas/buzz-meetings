@@ -359,6 +359,14 @@ pub enum SteerError {
     /// Transport-level failure: write error, read EOF, JSON-RPC framing
     /// violation, etc. The string carries the underlying `AcpError`'s display.
     Transport(String),
+    /// The per-task steer channel is full: the agent is mid-round and has
+    /// not drained the previous steer yet (steers drain at round
+    /// boundaries). The event is still queued for the channel, so the
+    /// caller should do NOTHING — leave it for normal dispatch after the
+    /// in-flight turn completes. Falling back to cancel+merge here kills a
+    /// healthy turn every time the room is busy, which cascades: no turn
+    /// ever finishes. (Fork fix; upstream mapped this into `Transport`.)
+    Busy,
     /// At steer-write time neither steer transport was available: no
     /// `expectedRunId` (`AcpClient::active_run_id` was `None`, so the
     /// goose-native method could not be formed) and the agent did not
@@ -684,8 +692,10 @@ impl AgentPool {
             .steer_tx
             .as_ref()
             .ok_or_else(|| SteerError::Transport("steer_tx not installed".into()))?;
-        tx.try_send(request)
-            .map_err(|e| SteerError::Transport(e.to_string()))
+        tx.try_send(request).map_err(|e| match e {
+            mpsc::error::TrySendError::Full(_) => SteerError::Busy,
+            other => SteerError::Transport(other.to_string()),
+        })
     }
 
     pub fn result_tx(&self) -> mpsc::UnboundedSender<PromptResult> {

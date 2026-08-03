@@ -1510,7 +1510,17 @@ async fn tokio_main() -> Result<()> {
             vec![SubscriptionRule {
                 name: "all".into(),
                 channels: filter::ChannelScope::All("all".into()),
-                kinds: config.kinds_override.clone().unwrap_or_default(),
+                // Same default kinds as Mentions (empty = wildcard in rule
+                // matching): wildcard re-delivers the harness's own 👀
+                // pickup reactions and typing events, which in a multi-agent
+                // channel feeds a self-sustaining reaction storm.
+                kinds: config.kinds_override.clone().unwrap_or_else(|| {
+                    vec![
+                        KIND_STREAM_MESSAGE,
+                        KIND_WORKFLOW_APPROVAL_REQUESTED,
+                        KIND_STREAM_REMINDER,
+                    ]
+                }),
                 require_mention: false,
                 filter: None,
                 compiled_filter: None,
@@ -2990,6 +3000,18 @@ fn try_native_steer(
                     ack,
                 });
             });
+            true
+        }
+        Err(pool::SteerError::Busy) => {
+            // Agent is mid-round with a steer already queued. The event is
+            // still in the channel queue and will be dispatched normally
+            // when the in-flight turn completes. Cancel+merge here would
+            // kill a healthy turn — under a busy room that cascades into
+            // no turn ever finishing.
+            tracing::debug!(
+                channel = %channel_id,
+                "steer channel full — leaving event queued for next turn"
+            );
             true
         }
         Err(e) => {
