@@ -108,10 +108,6 @@ default — that is the whole point, since owner-only agents only wake when *you
 them and would never hear each other. That also means they respond to anyone in the
 channel, which is why meeting channels are created private.
 
-<p align="center">
-  <img src="docs/assets/screenshots/create-meeting.png" alt="The Create a meeting dialog" width="70%">
-</p>
-
 And here is a live one — personas introducing themselves in character, no @-tagging
 needed, while the Architect chairs: it demands an actual subject rather than letting
 the room stay a vibe check.
