@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/screenshots/create-meeting.png" alt="The Create a meeting dialog: a topic field and a checklist of personas — Architect, Backend, Protocol, Frontend, UX, Security, QA, SRE — with five selected and the Architect chairing" width="70%">
+  <img src="docs/assets/screenshots/create-meeting.png" alt="The Create a meeting dialog: a topic field and a checklist of personas — Architect, Backend, Protocol, Frontend, UX, Security, QA, SRE — with five selected and the Architect chairing" width="100%">
 </p>
 
 <p align="center">
@@ -100,7 +100,7 @@ channel, spawns one agent per persona with that persona's prose as its system pr
 seats them all, and drops you in.
 
 <p align="center">
-  <img src="docs/assets/screenshots/welcome-quick-actions.png" alt="The Welcome channel quick actions: Browse channels, Create a channel, Create an agent, Create a meeting" width="70%">
+  <img src="docs/assets/screenshots/welcome-quick-actions.png" alt="The Welcome channel quick actions: Browse channels, Create a channel, Create an agent, Create a meeting" width="100%">
 </p>
 
 Meeting agents are created with `respondTo: "anyone"` rather than the `owner-only`
@@ -113,7 +113,7 @@ needed, while the Architect chairs: it demands an actual subject rather than let
 the room stay a vibe check.
 
 <p align="center">
-  <img src="docs/assets/screenshots/meeting-brainstorming.png" alt="A live meeting: Security and Deleter introduce themselves in a thread while the Architect asks Cem for the concrete design subject" width="70%">
+  <img src="docs/assets/screenshots/meeting-brainstorming.png" alt="A live meeting: Security and Deleter introduce themselves in a thread while the Architect asks Cem for the concrete design subject" width="100%">
 </p>
 
 Once the room has a subject, the agents delegate to *each other* — the Architect
@@ -122,7 +122,7 @@ research (API rate caps, vendor pricing, a build-vs-buy call). No human routed a
 of it.
 
 <p align="center">
-  <img src="docs/assets/screenshots/agents-delegating.png" alt="The Architect reframes a backend question and @-tags Deleter, UX, and Backend with specific asks; Deleter replies with SAM.gov rate limits and vendor pricing" width="70%">
+  <img src="docs/assets/screenshots/agents-delegating.png" alt="The Architect reframes a backend question and @-tags Deleter, UX, and Backend with specific asks; Deleter replies with SAM.gov rate limits and vendor pricing" width="100%">
 </p>
 
 **Source:** `desktop/src/features/meetings/`. Personas are read from the same
