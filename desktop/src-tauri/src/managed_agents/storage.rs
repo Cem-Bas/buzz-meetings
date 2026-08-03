@@ -263,7 +263,39 @@ pub fn load_managed_agents(app: &AppHandle) -> Result<Vec<ManagedAgentRecord>, S
     let mut records = load_agent_store(app)?;
     records.retain(|record| !record.pubkey.is_empty());
     hydrate_keys(&mut records);
+    heal_default_runtime(app, &mut records);
     Ok(records)
+}
+
+/// Records created before create-time runtime inheritance (see
+/// `commands/agents.rs`) carry no `runtime` and an `agent_command` snapshot of
+/// the hardcoded `buzz-agent` default. Heal them to the global preferred
+/// runtime so they behave like freshly created agents. Explicit per-agent
+/// overrides always win and are never touched.
+// ponytail: can't distinguish a persona that deliberately pinned buzz-agent
+// from the fallback snapshot; if an agent must stay on buzz-agent, set an
+// explicit agent_command_override via Edit Agent.
+fn heal_default_runtime(app: &AppHandle, records: &mut [ManagedAgentRecord]) {
+    let Some(global_runtime) = crate::managed_agents::load_global_agent_config(app)
+        .ok()
+        .and_then(|g| g.preferred_runtime)
+        .filter(|r| !r.trim().is_empty())
+    else {
+        return;
+    };
+    for record in records.iter_mut() {
+        let no_runtime = record
+            .runtime
+            .as_deref()
+            .is_none_or(|value| value.trim().is_empty());
+        let no_override = record
+            .agent_command_override
+            .as_deref()
+            .is_none_or(|value| value.trim().is_empty());
+        if no_runtime && no_override && record.agent_command == "buzz-agent" {
+            record.runtime = Some(global_runtime.clone());
+        }
+    }
 }
 
 /// Load the key-less agent *definitions* (former personas) from the unified

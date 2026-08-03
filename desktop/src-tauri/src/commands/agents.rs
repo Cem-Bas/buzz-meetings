@@ -829,6 +829,27 @@ pub async fn create_managed_agent(
             linked_persona.as_ref(),
         )?;
 
+        // A persona without a pinned runtime inherits the machine's global
+        // default harness (same healing personas/snapshot.rs applies).
+        // Without this, record_agent_command falls through to the hardcoded
+        // buzz-agent default, and e.g. meeting personas demand an LLM
+        // provider that a CLI-login runtime (claude/codex) never uses.
+        let inherited_runtime = {
+            let persona_runtime = requested_persona_id
+                .as_deref()
+                .and_then(|pid| personas.iter().find(|p| p.id == pid))
+                .and_then(|p| p.runtime.as_deref())
+                .filter(|r| !r.trim().is_empty());
+            if persona_runtime.is_some() {
+                None
+            } else {
+                crate::managed_agents::load_global_agent_config(&app)
+                    .ok()
+                    .and_then(|g| g.preferred_runtime)
+                    .filter(|r| !r.trim().is_empty())
+            }
+        };
+
         let record = crate::managed_agents::ManagedAgentRecord {
             pubkey: pubkey.clone(),
             name: name.clone(),
@@ -893,7 +914,7 @@ pub async fn create_managed_agent(
             respond_to_allowlist: minted.respond_to_allowlist.clone(),
             display_name: None,
             slug: None,
-            runtime: None,
+            runtime: inherited_runtime,
             name_pool: Vec::new(),
             is_builtin: false,
             is_active: true,
