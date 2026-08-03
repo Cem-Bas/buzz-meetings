@@ -403,6 +403,17 @@ pub(crate) fn build_respond_to_env(
         remove.push("BUZZ_ACP_RESPOND_TO_ALLOWLIST");
     }
 
+    // respond-to "anyone" is the ambient mode (meetings): the agent should
+    // hear unmentioned room traffic, not just @-mentions. Subscribe mode is
+    // the gate that actually controls that — respond-to alone only widens who
+    // may address the agent. Per-agent env vars are applied after this and
+    // still win.
+    if record.respond_to == super::types::RespondTo::Anyone {
+        set.push(("BUZZ_ACP_SUBSCRIBE", "all".to_string()));
+    } else {
+        remove.push("BUZZ_ACP_SUBSCRIBE");
+    }
+
     // Legacy fallback: agents created before NIP-OA lack `auth_tag`. Without
     // it the harness can't resolve the owner, and owner-dependent gate modes
     // would drop every event. Forwarding the workspace owner pubkey via
@@ -958,11 +969,18 @@ pub fn spawn_agent_child(
     })
 }
 
+// `acp::stream` / `acp::tool` carry the agent's streamed text and tool calls
+// (see buzz-acp acp.rs handle_session_update) — without them a silently
+// dropped reply is invisible in the agent log.
+const CHILD_LOG_DEFAULT: &str = "buzz_acp=info,acp=info";
+
 fn child_rust_log_filter() -> String {
     match std::env::var("RUST_LOG") {
         Ok(existing) if existing.contains("buzz_acp") => existing,
-        Ok(existing) if !existing.trim().is_empty() => format!("{existing},buzz_acp=info"),
-        _ => "buzz_acp=info".to_string(),
+        Ok(existing) if !existing.trim().is_empty() => {
+            format!("{existing},{CHILD_LOG_DEFAULT}")
+        }
+        _ => CHILD_LOG_DEFAULT.to_string(),
     }
 }
 
