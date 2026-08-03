@@ -51,12 +51,9 @@ default is what it is. Roster first, gate second.
 
 ## Current state
 
-- `origin` points at **upstream** (`https://github.com/block/buzz`) — there is
-  no separate fork remote yet. Forked at `f86cfc7`.
-- The clone is **shallow** (`--depth 1`). You cannot rebase or merge against
-  upstream history until you run `git fetch --unshallow` (once).
-- Our changes are uncommitted on the default branch. First sync should put them
-  on a branch (see below).
+- `origin` is the fork (`https://github.com/Cem-Bas/buzz-meetings.git`);
+  `upstream` is `https://github.com/block/buzz`. Forked at `f86cfc7`.
+- Working branch is `meetings`.
 
 ## The one rule
 
@@ -79,6 +76,14 @@ Keep this table current. It is the merge checklist.
 | `crates/buzz-acp/src/pool.rs` | `fetch_channel_roster()`; `roster` param on `fetch_prompt_profile_lookup()`; call-site wiring | Medium — additive |
 | `README.md` | **Replaced** with the fork's front page | **Permanent conflict — always take ours.** Upstream's original is `git show upstream/main:README.md`; re-read it after a sync in case setup instructions changed |
 | `meetings/` | New: chaired multi-persona meeting harness (Python, no deps) | None — new directory, upstream has nothing here |
+| `crates/buzz-agent/src/config.rs` | `BUZZ_AGENT_REQUIRE_REPLY` defaults **on** (local models end turns without publishing; the local desktop spawn path never opted in) | Low — one default + doc comment |
+| `crates/buzz-acp/src/pool.rs` | `SteerError::Busy`: full steer channel is "agent busy", not a transport failure | Low — additive variant |
+| `crates/buzz-acp/src/lib.rs` | On `Busy`, leave the event queued instead of cancel+merge (busy rooms killed every turn); All-mode rule kinds default to message kinds | Medium — steer fallback logic is upstream-owned |
+| `crates/buzz-acp/src/config.rs` | All-mode channel filters default to message kinds, not wildcard (wildcard feeds the harness's own 👀 pickup reactions back in → reaction storm); test updated | Low |
+| `desktop/src-tauri/src/managed_agents/runtime.rs` | `respond_to=anyone` spawns with `BUZZ_ACP_SUBSCRIBE=all` (ambient); child `RUST_LOG` includes `acp::stream`/`acp::tool` | Low — additive |
+| `desktop/src-tauri/src/commands/agents.rs` | New records inherit the global preferred runtime when the persona pins none | Low — additive |
+| `desktop/src-tauri/src/managed_agents/storage.rs` | `heal_default_runtime()`: pre-inheritance records healed at load | Low — additive |
+| `docs/assets/screenshots/meeting-brainstorming.png`, `welcome-quick-actions.png` | Live-meeting screenshots for README | None (ours only) |
 | `README-FORK.md` | This file | None (ours only) |
 
 Nothing else is touched. If that stops being true, add a row — an undocumented

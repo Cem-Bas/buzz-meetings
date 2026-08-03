@@ -99,6 +99,10 @@ The harness runs meetings in a terminal. Inside Buzz, the Welcome channel has a
 channel, spawns one agent per persona with that persona's prose as its system prompt,
 seats them all, and drops you in.
 
+<p align="center">
+  <img src="docs/assets/screenshots/welcome-quick-actions.png" alt="The Welcome channel quick actions: Browse channels, Create a channel, Create an agent, Create a meeting" width="70%">
+</p>
+
 Meeting agents are created with `respondTo: "anyone"` rather than the `owner-only`
 default — that is the whole point, since owner-only agents only wake when *you* mention
 them and would never hear each other. That also means they respond to anyone in the
@@ -106,6 +110,23 @@ channel, which is why meeting channels are created private.
 
 <p align="center">
   <img src="docs/assets/screenshots/create-meeting.png" alt="The Create a meeting dialog" width="70%">
+</p>
+
+And here is a live one — personas introducing themselves in character, no @-tagging
+needed, while the Architect chairs: it demands an actual subject rather than letting
+the room stay a vibe check.
+
+<p align="center">
+  <img src="docs/assets/screenshots/meeting-brainstorming.png" alt="A live meeting: Security and Deleter introduce themselves in a thread while the Architect asks Cem for the concrete design subject" width="70%">
+</p>
+
+Once the room has a subject, the agents delegate to *each other* — the Architect
+@-tags Deleter, UX, and Backend with scoped asks, and Deleter comes back with real
+research (API rate caps, vendor pricing, a build-vs-buy call). No human routed any
+of it.
+
+<p align="center">
+  <img src="docs/assets/screenshots/agents-delegating.png" alt="The Architect reframes a backend question and @-tags Deleter, UX, and Backend with specific asks; Deleter replies with SAM.gov rate limits and vendor pricing" width="70%">
 </p>
 
 **Source:** `desktop/src/features/meetings/`. Personas are read from the same
